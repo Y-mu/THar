@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "langhar-intent-orchestrator"
+version = "0.1.0"
+description = "A standalone intent-first conversational agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain>=1.4,<2",
+    "langchain-openai>=1.1,<2",
+    "python-dotenv>=1.0,<2",
+    "typesafe-sdk>=0.7,<1",
+]
+
+[tool.setuptools.packages.find]
+include = ["langHar*"]
