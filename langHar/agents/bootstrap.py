@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from langHar.agents.agent import AgentService
+from langHar.agents.agent_service import AgentService
 from langHar.agents.intent_catalog import INTENT_CATALOG
 from langHar.agents.intent_router import IntentRouter
 from langHar.agents.jev_intention import JevIntention

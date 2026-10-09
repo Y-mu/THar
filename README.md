@@ -2,6 +2,16 @@
 
 `langHar` 是独立实现，不导入或运行 `thar` 目录中的代码。
 
+# 启动项目
+
+```bash
+source env/bin/activate
+python -m pip install -e .
+uvicorn langHar.api.app:app --reload --host 127.0.0.1 --port 8000
+```
+
+接口文档：<http://127.0.0.1:8000/docs>
+
 ## 调用流程
 
 ```text
@@ -23,10 +33,15 @@
 - `langHar/agents/jev_intention.py`：JEV 意图识别适配器。
 - `langHar/agents/intent_router.py`：故障关闭的路由策略。
 - `langHar/agents/intent_catalog.py`：意图、criteria、提示词和工具权限的单一配置源。
-- `langHar/bootstrap.py`：服务端 composition root，只在启动阶段调用一次。
-- `langHar/agents/agent.py`：长生命周期 `AgentService`，供后续接口层调用。
+- `langHar/agents/bootstrap.py`：服务端 composition root，只在启动阶段调用一次。
+- `langHar/agents/agent_service.py`：无状态的意图路由与 Agent 执行服务。
 - `langHar/agents/langchain_agent.py`：创建并封装唯一的 LangChain Agent。
 - `langHar/agents/core/agent_event.py`：框架无关的流式事件。
+- `langHar/api/app.py`：FastAPI 应用和 lifespan。
+- `langHar/api/modules/auth`：Cookie 登录会话、当前用户和认证路由。
+- `langHar/api/modules/session`：对话 Session、消息历史和 CRUD 路由。
+- `langHar/api/modules/chat`：协调 Session 历史、Agent 调用和最终消息保存。
+- `langHar/api/modules/health`：存活和就绪检查路由。
 - `langHar/tools/base_tools.py`：工具注册表。
 
 ## 安装和配置
@@ -50,12 +65,52 @@ TYPESAFE_API_KEY=你的_JEV_Token
 
 同时兼容 `LLM_API_KEY` 和 `JEV_API_KEY`。
 
+开发登录默认使用 `admin/password`，可通过以下配置覆盖：
+
+```dotenv
+LANGHAR_USERNAME=admin
+LANGHAR_PASSWORD=请修改密码
+LANGHAR_COOKIE_SECURE=false
+```
+
+生产环境使用 HTTPS 时必须将 `LANGHAR_COOKIE_SECURE` 设为 `true`。
+
+## API 使用
+
+登录并保存 Cookie：
+
+```bash
+curl -i -c cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"password"}' \
+  http://127.0.0.1:8000/api/v1/users/login
+```
+
+创建 Session：
+
+```bash
+curl -b cookies.txt -X POST \
+  http://127.0.0.1:8000/api/v1/sessions
+```
+
+向 Agent 发送消息（将 `{session_id}` 替换为创建结果）：
+
+```bash
+curl -b cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"content":"你好"}' \
+  http://127.0.0.1:8000/api/v1/sessions/{session_id}/messages
+```
+
+当前用户、会话和登录 Cookie 都保存在单进程内存中，服务重启后会丢失。
+这是便于继续手写的开发版本；接入数据库后再使用多 worker 部署。
+
 ## 服务端接入
 
 在 Web 服务的 startup/lifespan 阶段创建一次：
 
 ```python
-from langHar.bootstrap import create_agent_service
+from langHar.agents.bootstrap import create_agent_service
 
 agent_service = create_agent_service()
 ```

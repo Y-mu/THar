@@ -5,14 +5,14 @@ from collections.abc import AsyncIterator, Sequence
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from langHar.agents.agent import AgentService, CLARIFICATION_MESSAGE
+from langHar.agents.agent_service import AgentService, CLARIFICATION_MESSAGE
 from langHar.agents.core.Intention import Intention, IntentMatch
 from langHar.agents.core.agent_event import AgentEvent
 from langHar.agents.core.chat_message import ChatMessage
 from langHar.agents.intent_catalog import INTENT_CATALOG
 from langHar.agents.intent_router import IntentRouter
 from langHar.agents.langchain_agent import LangChainAgentExecutor
-from langHar.bootstrap import create_agent_service
+from langHar.agents.bootstrap import create_agent_service
 from langHar.config import Settings
 
 
@@ -37,6 +37,7 @@ class FakeExecutor:
     def __init__(self, answer: str) -> None:
         self.answer = answer
         self.calls: list[tuple[Sequence[ChatMessage], str, str]] = []
+        self.close_calls = 0
 
     async def stream(
         self,
@@ -48,6 +49,31 @@ class FakeExecutor:
         self.calls.append((messages, session_id, intent))
         yield AgentEvent(type="token", content=self.answer)
         yield AgentEvent(type="final", content=self.answer)
+
+    async def aclose(self) -> None:
+        self.close_calls += 1
+
+
+class FakeAsyncClient:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    async def close(self) -> None:
+        self.close_calls += 1
+
+
+class FakeSyncClient:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class FakeModel:
+    def __init__(self) -> None:
+        self.root_async_client = FakeAsyncClient()
+        self.root_client = FakeSyncClient()
 
 
 class FakeCompiledAgent:
@@ -125,6 +151,13 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "session_id"):
             await service.handle_message("你好", session_id="  ")
 
+    async def test_closes_agent_resources(self) -> None:
+        service, executor = create_service("general_chat")
+
+        await service.aclose()
+
+        self.assertEqual(executor.close_calls, 1)
+
 
 class LangChainAgentExecutorTests(unittest.IsolatedAsyncioTestCase):
     async def test_preserves_stream_and_session_events(self) -> None:
@@ -147,7 +180,8 @@ class LangChainAgentExecutorTests(unittest.IsolatedAsyncioTestCase):
                 },
             ]
         )
-        executor = LangChainAgentExecutor(compiled, INTENT_CATALOG)
+        model = FakeModel()
+        executor = LangChainAgentExecutor(compiled, model, INTENT_CATALOG)
 
         events = [
             event
@@ -181,6 +215,20 @@ class LangChainAgentExecutorTests(unittest.IsolatedAsyncioTestCase):
             compiled.input["messages"][1],
             {"role": "user", "content": "北京天气"},
         )
+
+    async def test_closes_model_clients_once(self) -> None:
+        model = FakeModel()
+        executor = LangChainAgentExecutor(
+            FakeCompiledAgent([]),
+            model,
+            INTENT_CATALOG,
+        )
+
+        await executor.aclose()
+        await executor.aclose()
+
+        self.assertEqual(model.root_async_client.close_calls, 1)
+        self.assertEqual(model.root_client.close_calls, 1)
 
 
 class BootstrapTests(unittest.TestCase):

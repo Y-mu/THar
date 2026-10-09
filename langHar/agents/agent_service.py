@@ -12,7 +12,7 @@ CLARIFICATION_MESSAGE = "我还不能确定你的需求，请再具体说明一�
 
 
 class AgentService:
-    """对接口层提供的长生命周期、意图优先 Agent 服务。"""
+    """意图路由和单 Agent 执行服务，不持有会话历史。"""
 
     def __init__(
         self,
@@ -30,7 +30,6 @@ class AgentService:
         session_id: str,
         history: Sequence[ChatMessage] = (),
     ) -> str:
-        """处理一条消息并返回最终回答，适合普通 HTTP 接口。"""
         final_answer = ""
         async for event in self.stream_message(
             message,
@@ -48,7 +47,6 @@ class AgentService:
         session_id: str,
         history: Sequence[ChatMessage] = (),
     ) -> AsyncIterator[AgentEvent]:
-        """处理一条消息并保留 token、工具和最终事件，适合流式接口。"""
         if not session_id.strip():
             raise ValueError("session_id 不能为空。")
         if not message.strip():
@@ -74,3 +72,7 @@ class AgentService:
             intent=target,
         ):
             yield event
+
+    async def aclose(self) -> None:
+        await self._agent.aclose()
+

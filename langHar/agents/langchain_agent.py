@@ -19,10 +19,13 @@ class LangChainAgentExecutor(AgentExecutor):
     def __init__(
         self,
         agent: Any,
+        model: ChatOpenAI,
         catalog: Mapping[str, IntentSpec],
     ) -> None:
         self._agent = agent
+        self._model = model
         self._catalog = catalog
+        self._closed = False
 
     async def stream(
         self,
@@ -61,6 +64,16 @@ class LangChainAgentExecutor(AgentExecutor):
 
         yield AgentEvent(type="final", content="".join(streamed_parts))
 
+    async def aclose(self) -> None:
+        """关闭 ChatOpenAI 创建的异步和同步 HTTP 客户端。"""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            await self._model.root_async_client.close()
+        finally:
+            self._model.root_client.close()
+
 
 def create_chat_model(settings: Settings) -> ChatOpenAI:
     return ChatOpenAI(
@@ -84,7 +97,7 @@ def create_agent_executor(
         tools=[],
         name="intent_agent",
     )
-    return LangChainAgentExecutor(compiled_agent, catalog)
+    return LangChainAgentExecutor(compiled_agent, model, catalog)
 
 
 def _content_to_text(content: Any) -> str:
