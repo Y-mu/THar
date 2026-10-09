@@ -18,7 +18,7 @@ async def ready(request: Request) -> JSONResponse:
         "agent_service",
         "auth_service",
         "chat_service",
-        "session_service",
+        "conversation_service",
     )
     if any(
         getattr(request.app.state, name, None) is None

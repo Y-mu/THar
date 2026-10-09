@@ -12,11 +12,11 @@ class MessageResponse(BaseModel):
     created_at: datetime
 
 
-class SessionSummaryResponse(BaseModel):
-    session_id: str
+class ConversationSummaryResponse(BaseModel):
+    conversation_id: str
     created_at: datetime
     updated_at: datetime
 
 
-class SessionResponse(SessionSummaryResponse):
+class ConversationResponse(ConversationSummaryResponse):
     messages: list[MessageResponse]

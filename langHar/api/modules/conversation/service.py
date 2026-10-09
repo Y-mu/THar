@@ -7,7 +7,7 @@ from typing import Literal
 from uuid import uuid4
 
 
-class SessionNotFoundError(LookupError):
+class ConversationNotFoundError(LookupError):
     pass
 
 
@@ -19,8 +19,8 @@ class StoredMessage:
 
 
 @dataclass(frozen=True, slots=True)
-class ChatSession:
-    session_id: str
+class Conversation:
+    conversation_id: str
     user_id: str
     created_at: datetime
     updated_at: datetime
@@ -28,68 +28,72 @@ class ChatSession:
 
 
 @dataclass(slots=True)
-class _SessionRecord:
-    session_id: str
+class _ConversationRecord:
+    conversation_id: str
     user_id: str
     created_at: datetime
     updated_at: datetime
     messages: list[StoredMessage] = field(default_factory=list)
-    conversation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    message_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
-class SessionService:
-    """按用户隔离的内存会话与消息存储。"""
+class ConversationService:
+    """按用户隔离的内存对话与消息存储。"""
 
     def __init__(self) -> None:
-        self._sessions: dict[str, _SessionRecord] = {}
+        self._conversations: dict[str, _ConversationRecord] = {}
         self._lock = asyncio.Lock()
 
-    async def create(self, user_id: str) -> ChatSession:
+    async def create(self, user_id: str) -> Conversation:
         now = datetime.now(timezone.utc)
-        record = _SessionRecord(
-            session_id=uuid4().hex,
+        record = _ConversationRecord(
+            conversation_id=uuid4().hex,
             user_id=user_id,
             created_at=now,
             updated_at=now,
         )
         async with self._lock:
-            self._sessions[record.session_id] = record
+            self._conversations[record.conversation_id] = record
         return self._snapshot(record)
 
-    async def list_for_user(self, user_id: str) -> list[ChatSession]:
+    async def list_for_user(self, user_id: str) -> list[Conversation]:
         async with self._lock:
-            records = [
+            items = [
                 self._snapshot(record)
-                for record in self._sessions.values()
+                for record in self._conversations.values()
                 if record.user_id == user_id
             ]
-        return sorted(records, key=lambda item: item.updated_at, reverse=True)
+        return sorted(items, key=lambda item: item.updated_at, reverse=True)
 
-    async def get(self, session_id: str, user_id: str) -> ChatSession:
-        record = await self._get_owned_record(session_id, user_id)
-        async with record.conversation_lock:
+    async def get(
+        self,
+        conversation_id: str,
+        user_id: str,
+    ) -> Conversation:
+        record = await self._get_owned_record(conversation_id, user_id)
+        async with record.message_lock:
             return self._snapshot(record)
 
     async def get_history(
         self,
         *,
-        session_id: str,
+        conversation_id: str,
         user_id: str,
     ) -> tuple[StoredMessage, ...]:
-        record = await self._get_owned_record(session_id, user_id)
-        async with record.conversation_lock:
+        record = await self._get_owned_record(conversation_id, user_id)
+        async with record.message_lock:
             return tuple(record.messages)
 
     async def append_exchange(
         self,
         *,
-        session_id: str,
+        conversation_id: str,
         user_id: str,
         user_message: str,
         assistant_message: str,
     ) -> StoredMessage:
-        record = await self._get_owned_record(session_id, user_id)
-        async with record.conversation_lock:
+        record = await self._get_owned_record(conversation_id, user_id)
+        async with record.message_lock:
             now = datetime.now(timezone.utc)
             record.messages.extend(
                 (
@@ -106,19 +110,19 @@ class SessionService:
 
     async def _get_owned_record(
         self,
-        session_id: str,
+        conversation_id: str,
         user_id: str,
-    ) -> _SessionRecord:
+    ) -> _ConversationRecord:
         async with self._lock:
-            record = self._sessions.get(session_id)
+            record = self._conversations.get(conversation_id)
             if record is None or record.user_id != user_id:
-                raise SessionNotFoundError(session_id)
+                raise ConversationNotFoundError(conversation_id)
             return record
 
     @staticmethod
-    def _snapshot(record: _SessionRecord) -> ChatSession:
-        return ChatSession(
-            session_id=record.session_id,
+    def _snapshot(record: _ConversationRecord) -> Conversation:
+        return Conversation(
+            conversation_id=record.conversation_id,
             user_id=record.user_id,
             created_at=record.created_at,
             updated_at=record.updated_at,

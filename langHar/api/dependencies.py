@@ -4,7 +4,7 @@ from fastapi import HTTPException, Request, status
 
 from langHar.api.modules.auth.service import AUTH_COOKIE_NAME, AuthService, User
 from langHar.api.modules.chat.service import ChatService
-from langHar.api.modules.session.service import SessionService
+from langHar.api.modules.conversation.service import ConversationService
 
 
 def get_auth_service(request: Request) -> AuthService:
@@ -15,13 +15,13 @@ def get_chat_service(request: Request) -> ChatService:
     return request.app.state.chat_service
 
 
-def get_session_service(request: Request) -> SessionService:
-    return request.app.state.session_service
+def get_conversation_service(request: Request) -> ConversationService:
+    return request.app.state.conversation_service
 
 
-async def get_current_user(request: Request) -> User:
+def get_current_user(request: Request) -> User:
     service = get_auth_service(request)
-    user = await service.authenticate(request.cookies.get(AUTH_COOKIE_NAME))
+    user = service.authenticate(request.cookies.get(AUTH_COOKIE_NAME))
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

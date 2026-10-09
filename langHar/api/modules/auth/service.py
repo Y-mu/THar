@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import asyncio
-import hmac
-import os
 import secrets
-import time
 from dataclasses import dataclass
 
 
@@ -19,62 +15,33 @@ class User:
 
 
 class AuthService:
-    """验证用户并管理 Web 登录会话。"""
+    """多用户、内存版的最小登录服务。"""
 
-    def __init__(
-        self,
-        *,
-        username: str | None = None,
-        password: str | None = None,
-    ) -> None:
-        configured_username = username or os.getenv("LANGHAR_USERNAME", "admin")
-        configured_password = password or os.getenv("LANGHAR_PASSWORD", "password")
-        self._user = User(user_id="user-1", username=configured_username)
-        self._password = configured_password
+    def __init__(self) -> None:
         self.cookie_max_age = AUTH_COOKIE_MAX_AGE
-        self.cookie_secure = os.getenv(
-            "LANGHAR_COOKIE_SECURE",
-            "false",
-        ).lower() in {"1", "true", "yes"}
-        self._auth_sessions: dict[str, tuple[User, float]] = {}
-        self._lock = asyncio.Lock()
+        self.cookie_secure = False
+        self._auth_sessions: dict[str, User] = {}
 
-    async def login(self, username: str, password: str) -> tuple[str, User] | None:
-        username_matches = hmac.compare_digest(
-            username.encode(),
-            self._user.username.encode(),
-        )
-        password_matches = hmac.compare_digest(
-            password.encode(),
-            self._password.encode(),
-        )
-        if not username_matches or not password_matches:
+    def login(self, username: str, password: str) -> tuple[str, User] | None:
+        accounts = {
+            "admin": {"user_id": "user-1", "password": "password"},
+            "tony": {"user_id": "user-2", "password": "123456"},
+        }
+        account = accounts.get(username)
+        if account is None or password != account["password"]:
             return None
 
+        user = User(user_id=account["user_id"], username=username)
         token = secrets.token_urlsafe(32)
-        async with self._lock:
-            self._auth_sessions[token] = (
-                self._user,
-                time.monotonic() + self.cookie_max_age,
-            )
-        return token, self._user
+        self._auth_sessions[token] = user
+        return token, user
 
-    async def authenticate(self, token: str | None) -> User | None:
+    def authenticate(self, token: str | None) -> User | None:
         if not token:
             return None
-        async with self._lock:
-            auth_session = self._auth_sessions.get(token)
-            if auth_session is None:
-                return None
-            user, expires_at = auth_session
-            if expires_at <= time.monotonic():
-                self._auth_sessions.pop(token, None)
-                return None
-            return user
+        return self._auth_sessions.get(token)
 
-    async def logout(self, token: str | None) -> None:
+    def logout(self, token: str | None) -> None:
         if not token:
             return
-        async with self._lock:
-            self._auth_sessions.pop(token, None)
-
+        self._auth_sessions.pop(token, None)

@@ -39,8 +39,9 @@ uvicorn langHar.api.app:app --reload --host 127.0.0.1 --port 8000
 - `langHar/agents/core/agent_event.py`：框架无关的流式事件。
 - `langHar/api/app.py`：FastAPI 应用和 lifespan。
 - `langHar/api/modules/auth`：Cookie 登录会话、当前用户和认证路由。
-- `langHar/api/modules/session`：对话 Session、消息历史和 CRUD 路由。
-- `langHar/api/modules/chat`：协调 Session 历史、Agent 调用和最终消息保存。
+- `langHar/api/modules/conversation`：用户对话、消息历史和 CRUD 路由。
+- `langHar/api/modules/chat`：协调 Conversation 历史、Agent 调用和最终消息保存。
+- `langHar/api/modules/chat/sse.py`：将应用事件映射并编码为 SSE 传输事件。
 - `langHar/api/modules/health`：存活和就绪检查路由。
 - `langHar/tools/base_tools.py`：工具注册表。
 
@@ -65,15 +66,14 @@ TYPESAFE_API_KEY=你的_JEV_Token
 
 同时兼容 `LLM_API_KEY` 和 `JEV_API_KEY`。
 
-开发登录默认使用 `admin/password`，可通过以下配置覆盖：
+当前 MVP 在 `AuthService.login()` 中写死了两组演示账号：
 
-```dotenv
-LANGHAR_USERNAME=admin
-LANGHAR_PASSWORD=请修改密码
-LANGHAR_COOKIE_SECURE=false
+```text
+admin / password
+tony / 123456
 ```
 
-生产环境使用 HTTPS 时必须将 `LANGHAR_COOKIE_SECURE` 设为 `true`。
+后续接入数据库时，应删除硬编码账号并使用密码哈希。
 
 ## API 使用
 
@@ -86,21 +86,25 @@ curl -i -c cookies.txt \
   http://127.0.0.1:8000/api/v1/users/login
 ```
 
-创建 Session：
+创建 Conversation：
 
 ```bash
 curl -b cookies.txt -X POST \
-  http://127.0.0.1:8000/api/v1/sessions
+  http://127.0.0.1:8000/api/v1/conversations
 ```
 
-向 Agent 发送消息（将 `{session_id}` 替换为创建结果）：
+向 Agent 发送消息（将 `{conversation_id}` 替换为创建结果）：
 
 ```bash
-curl -b cookies.txt \
+curl -N -b cookies.txt \
   -H 'Content-Type: application/json' \
   -d '{"content":"你好"}' \
-  http://127.0.0.1:8000/api/v1/sessions/{session_id}/messages
+  http://127.0.0.1:8000/api/v1/chat/{conversation_id}/messages
 ```
+
+该接口返回 `text/event-stream`。每个事件的 `data` 都是 `ChatResponse`
+序列化后的 JSON，事件类型包括 `token`、`tool_start`、`tool_end`、`final`
+和 `error`。只有收到 `final` 时，服务端才会持久化本轮用户消息和最终回答。
 
 当前用户、会话和登录 Cookie 都保存在单进程内存中，服务重启后会丢失。
 这是便于继续手写的开发版本；接入数据库后再使用多 worker 部署。

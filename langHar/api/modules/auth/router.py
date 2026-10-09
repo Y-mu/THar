@@ -20,7 +20,7 @@ async def login(
     response: Response,
     service: AuthService = Depends(get_auth_service),
 ) -> LoginResponse:
-    result = await service.login(payload.username, payload.password)
+    result = service.login(payload.username, payload.password)
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -50,8 +50,7 @@ async def logout(
     request: Request,
     service: AuthService = Depends(get_auth_service),
 ) -> Response:
-    await service.logout(request.cookies.get(AUTH_COOKIE_NAME))
+    service.logout(request.cookies.get(AUTH_COOKIE_NAME))
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     response.delete_cookie(AUTH_COOKIE_NAME, path="/")
     return response
-

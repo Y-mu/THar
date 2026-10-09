@@ -7,29 +7,31 @@ from langHar.api.modules.auth.router import router as auth_router
 from langHar.api.modules.auth.service import AuthService
 from langHar.api.modules.chat.router import router as chat_router
 from langHar.api.modules.chat.service import ChatService
+from langHar.api.modules.conversation.router import router as conversation_router
+from langHar.api.modules.conversation.service import ConversationService
 from langHar.api.modules.health.router import router as health_router
-from langHar.api.modules.session.router import router as session_router
-from langHar.api.modules.session.service import SessionService
-
-
 
 def create_app(
     agent_service_factory=create_agent_service,
     auth_service_factory=AuthService,
-    session_service_factory=SessionService,
+    conversation_service_factory=ConversationService,
     chat_service_factory=ChatService,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         agent_service = agent_service_factory()
-        session_service = session_service_factory()
-        app.state.agent_service = agent_service
-        app.state.auth_service = auth_service_factory()
-        app.state.session_service = session_service
-        app.state.chat_service = chat_service_factory(
-            sessions=session_service,
+        auth_service = auth_service_factory()
+        conversation_service = conversation_service_factory()
+        chat_service = chat_service_factory(
+            conversations=conversation_service,
             agent=agent_service,
         )
+
+        app.state.agent_service = agent_service
+        app.state.auth_service = auth_service
+        app.state.conversation_service = conversation_service
+        app.state.chat_service = chat_service
+
         try:
             yield
         finally:
@@ -42,7 +44,7 @@ def create_app(
     )
 
     application.include_router(auth_router, prefix="/api/v1")
-    application.include_router(session_router, prefix="/api/v1")
+    application.include_router(conversation_router, prefix="/api/v1")
     application.include_router(chat_router, prefix="/api/v1")
     application.include_router(health_router)
     return application
