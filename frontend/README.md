@@ -41,7 +41,7 @@ frontend/
 
 ```bash
 source env/bin/activate
-uvicorn langHar.api.app:app --reload --host 127.0.0.1 --port 8000
+uvicorn langHar.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 再启动前端：

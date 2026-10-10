@@ -1,9 +1,41 @@
+# Secrets and local environment
 .env
+.env.*
+!.env.example
 env/
+venv/
 .venv/
+
+# Python
 __pycache__/
 *.py[cod]
+*.egg-info/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+build/
 dist/
-*.egg-info/
+
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Logs and temporary files
+*.log
+*.swp
+*.swo
+*~
+
+# IDE and operating system files
+.idea/
+.DS_Store
+Thumbs.db

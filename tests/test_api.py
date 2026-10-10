@@ -8,15 +8,16 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from langHar.agents.core.agent_context import AgentContext, IdentityLevel
-from langHar.agents.core.agent_event import AgentEvent
 from langHar.api.app import create_app
-from langHar.api.modules.auth.service import AUTH_COOKIE_NAME, AuthService
-from langHar.api.modules.chat.router import router as chat_router
-from langHar.api.modules.conversation.router import router as conversation_router
-from langHar.api.modules.conversation.service import (
+from langHar.api.chat.route import router as chat_router
+from langHar.api.session.route import router as session_router
+from langHar.bootstrap import AppContainer
+from langHar.core.agent import AgentContext, AgentEvent, IdentityLevel
+from langHar.orchestration.auth_service import AUTH_COOKIE_NAME, AuthService
+from langHar.orchestration.chat_service import ChatService
+from langHar.orchestration.session_manager import (
     ConversationNotFoundError,
-    ConversationService,
+    SessionManager,
 )
 
 
@@ -47,10 +48,14 @@ class FakeAgentService:
 class ApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.agent = FakeAgentService()
-        app = create_app(
-            agent_service_factory=lambda: self.agent,
-            auth_service_factory=AuthService,
+        sessions = SessionManager()
+        container = AppContainer(
+            agent_service=self.agent,
+            auth_service=AuthService(),
+            chat_service=ChatService(sessions=sessions, agent=self.agent),
+            session_manager=sessions,
         )
+        app = create_app(container_factory=lambda: container)
         self.client_context = TestClient(app)
         self.client = self.client_context.__enter__()
 
@@ -229,7 +234,7 @@ def _imported_modules(path: Path) -> set[str]:
 
 class ConversationOwnershipTests(unittest.IsolatedAsyncioTestCase):
     async def test_user_cannot_read_another_users_conversation(self) -> None:
-        service = ConversationService()
+        service = SessionManager()
         conversation = await service.create(1)
 
         with self.assertRaises(ConversationNotFoundError):
@@ -238,19 +243,17 @@ class ConversationOwnershipTests(unittest.IsolatedAsyncioTestCase):
 
 class ApiModuleBoundaryTests(unittest.TestCase):
     def test_conversation_and_chat_routers_use_distinct_prefixes(self) -> None:
-        self.assertEqual(conversation_router.prefix, "/conversations")
+        self.assertEqual(session_router.prefix, "/conversations")
         self.assertEqual(chat_router.prefix, "/chat")
 
-    def test_conversation_module_does_not_depend_on_agent_module(self) -> None:
+    def test_api_routes_do_not_depend_on_infrastructure(self) -> None:
         project_root = Path(__file__).resolve().parents[1]
-        conversation_module = (
-            project_root / "langHar" / "api" / "modules" / "conversation"
-        )
+        api = project_root / "langHar" / "api"
         violations: list[str] = []
 
-        for path in conversation_module.glob("*.py"):
+        for path in api.rglob("*.py"):
             if any(
-                module.startswith("langHar.agents")
+                module.startswith("langHar.infrastructure")
                 for module in _imported_modules(path)
             ):
                 violations.append(path.name)
@@ -260,7 +263,7 @@ class ApiModuleBoundaryTests(unittest.TestCase):
     def test_chat_router_only_handles_http_coordination(self) -> None:
         project_root = Path(__file__).resolve().parents[1]
         router_path = (
-            project_root / "langHar" / "api" / "modules" / "chat" / "router.py"
+            project_root / "langHar" / "api" / "chat" / "route.py"
         )
         modules = _imported_modules(router_path)
         source = router_path.read_text(encoding="utf-8")
@@ -272,12 +275,12 @@ class ApiModuleBoundaryTests(unittest.TestCase):
     def test_chat_schemas_do_not_encode_transport_or_agent_events(self) -> None:
         project_root = Path(__file__).resolve().parents[1]
         schemas_path = (
-            project_root / "langHar" / "api" / "modules" / "chat" / "schemas.py"
+            project_root / "langHar" / "api" / "chat" / "schemas.py"
         )
         modules = _imported_modules(schemas_path)
 
         self.assertFalse(
-            any(module.startswith("langHar.agents") for module in modules)
+            any(module.startswith("langHar.infrastructure") for module in modules)
         )
         self.assertFalse(
             any(module.startswith("sse_starlette") for module in modules)

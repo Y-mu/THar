@@ -5,25 +5,27 @@ from collections.abc import AsyncIterator, Sequence
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from langHar.agents.agent_service import (
+from langHar.bootstrap import create_agent_service
+from langHar.capabilities.prompts import PROMPT_REGISTRY
+from langHar.capabilities.tools import TOOL_CATALOG, TOOL_REGISTRY, ToolPolicy
+from langHar.config import Settings
+from langHar.core.agent import (
+    AgentContext,
+    AgentEvent,
+    ChatMessage,
+    IdentityLevel,
+)
+from langHar.infrastructure.intent_recognition.catalog import INTENT_CATALOG
+from langHar.infrastructure.llm.langchain_agent import LangChainAgentExecutor
+from langHar.orchestration.agent_service import (
     AgentService,
     CLARIFICATION_MESSAGE,
     TOOL_ACCESS_DENIED_MESSAGE,
 )
-from langHar.agents.intent_recognition import IntentRecognitionService
-from langHar.agents.intent_recognition.catalog import INTENT_CATALOG
-from langHar.agents.intent_recognition.recognizer import Intention, IntentMatch
-from langHar.agents.core.agent_context import AgentContext, IdentityLevel
-from langHar.agents.core.agent_event import AgentEvent
-from langHar.agents.core.chat_message import ChatMessage
-from langHar.agents.langchain_agent import LangChainAgentExecutor
-from langHar.agents.agent_factory import create_agent_service
-from langHar.agents.tool_policy import ToolPolicy
-from langHar.config import Settings
-from langHar.tools.base_tools import TOOL_REGISTRY
+from langHar.orchestration.intent_router import IntentMatch, IntentRouter
 
 
-class FakeIntention(Intention):
+class FakeIntention:
     def __init__(self, intent: str, confidence: float = 0.99) -> None:
         self._match = IntentMatch(
             intent=intent,
@@ -118,14 +120,14 @@ def create_service(
     *,
     confidence: float = 0.99,
 ) -> tuple[AgentService, FakeExecutor]:
-    intent_recognition = IntentRecognitionService(
+    intent_router = IntentRouter(
         FakeIntention(intent, confidence),
         INTENT_CATALOG.keys(),
     )
     executor = FakeExecutor("single-agent-answer")
     return AgentService(
-        intent_recognition=intent_recognition,
-        tool_policy=ToolPolicy(INTENT_CATALOG),
+        intent_router=intent_router,
+        tool_policy=ToolPolicy(TOOL_CATALOG),
         agent=executor,
     ), executor
 
@@ -246,7 +248,11 @@ class LangChainAgentExecutorTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         model = FakeModel()
-        executor = LangChainAgentExecutor(compiled, model, INTENT_CATALOG)
+        executor = LangChainAgentExecutor(
+            compiled,
+            model,
+            {name: spec.system_prompt for name, spec in PROMPT_REGISTRY.items()},
+        )
 
         events = [
             event
@@ -286,7 +292,7 @@ class LangChainAgentExecutorTests(unittest.IsolatedAsyncioTestCase):
             compiled.input["messages"][0],
             {
                 "role": "system",
-                "content": INTENT_CATALOG["weather"].system_prompt,
+                "content": PROMPT_REGISTRY["weather"].system_prompt,
             },
         )
         self.assertEqual(
@@ -299,7 +305,7 @@ class LangChainAgentExecutorTests(unittest.IsolatedAsyncioTestCase):
         executor = LangChainAgentExecutor(
             FakeCompiledAgent([]),
             model,
-            INTENT_CATALOG,
+            {name: spec.system_prompt for name, spec in PROMPT_REGISTRY.items()},
         )
 
         await executor.aclose()
@@ -313,11 +319,11 @@ class AgentFactoryTests(unittest.TestCase):
     def test_creates_one_agent_with_catalog_tools_at_startup(self) -> None:
         with (
             patch(
-                "langHar.agents.langchain_agent.create_chat_model",
+                "langHar.infrastructure.llm.langchain_agent.create_chat_model",
                 return_value=object(),
             ),
             patch(
-                "langHar.agents.langchain_agent.create_agent",
+                "langHar.infrastructure.llm.langchain_agent.create_agent",
                 side_effect=lambda *args, **kwargs: object(),
             ) as create,
         ):
