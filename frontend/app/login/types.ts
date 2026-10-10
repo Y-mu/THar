@@ -4,7 +4,8 @@ export type LoginCredentials = {
 };
 
 export type LoginResponse = {
-  user_id: string;
+  user_id: number;
   username: string;
+  identity_level: "user" | "admin";
   message: string;
 };

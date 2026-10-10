@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from langHar.agents.bootstrap import create_agent_service
+from langHar.agents.agent_factory import create_agent_service
 from langHar.api.modules.auth.router import router as auth_router
 from langHar.api.modules.auth.service import AuthService
 from langHar.api.modules.chat.router import router as chat_router

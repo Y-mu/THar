@@ -33,6 +33,7 @@ async def send_message(
         agent_events = await chat.start_stream(
             conversation_id=conversation_id,
             user_id=user.user_id,
+            identity_level=user.identity_level,
             content=content,
         )
     except ConversationNotFoundError as exc:

@@ -21,7 +21,7 @@ class StoredMessage:
 @dataclass(frozen=True, slots=True)
 class Conversation:
     conversation_id: str
-    user_id: str
+    user_id: int
     created_at: datetime
     updated_at: datetime
     messages: tuple[StoredMessage, ...]
@@ -30,7 +30,7 @@ class Conversation:
 @dataclass(slots=True)
 class _ConversationRecord:
     conversation_id: str
-    user_id: str
+    user_id: int
     created_at: datetime
     updated_at: datetime
     messages: list[StoredMessage] = field(default_factory=list)
@@ -44,7 +44,7 @@ class ConversationService:
         self._conversations: dict[str, _ConversationRecord] = {}
         self._lock = asyncio.Lock()
 
-    async def create(self, user_id: str) -> Conversation:
+    async def create(self, user_id: int) -> Conversation:
         now = datetime.now(timezone.utc)
         record = _ConversationRecord(
             conversation_id=uuid4().hex,
@@ -56,7 +56,7 @@ class ConversationService:
             self._conversations[record.conversation_id] = record
         return self._snapshot(record)
 
-    async def list_for_user(self, user_id: str) -> list[Conversation]:
+    async def list_for_user(self, user_id: int) -> list[Conversation]:
         async with self._lock:
             items = [
                 self._snapshot(record)
@@ -68,7 +68,7 @@ class ConversationService:
     async def get(
         self,
         conversation_id: str,
-        user_id: str,
+        user_id: int,
     ) -> Conversation:
         record = await self._get_owned_record(conversation_id, user_id)
         async with record.message_lock:
@@ -78,7 +78,7 @@ class ConversationService:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        user_id: int,
     ) -> tuple[StoredMessage, ...]:
         record = await self._get_owned_record(conversation_id, user_id)
         async with record.message_lock:
@@ -88,7 +88,7 @@ class ConversationService:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        user_id: int,
         user_message: str,
         assistant_message: str,
     ) -> StoredMessage:
@@ -111,7 +111,7 @@ class ConversationService:
     async def _get_owned_record(
         self,
         conversation_id: str,
-        user_id: str,
+        user_id: int,
     ) -> _ConversationRecord:
         async with self._lock:
             record = self._conversations.get(conversation_id)

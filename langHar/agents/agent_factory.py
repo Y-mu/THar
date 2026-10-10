@@ -1,23 +1,24 @@
 from __future__ import annotations
 
 from langHar.agents.agent_service import AgentService
-from langHar.agents.intent_catalog import INTENT_CATALOG
-from langHar.agents.intent_router import IntentRouter
-from langHar.agents.jev_intention import JevIntention
-from langHar.config import Settings
+from langHar.agents.intent_recognition import IntentRecognitionService
+from langHar.agents.intent_recognition.catalog import INTENT_CATALOG
+from langHar.agents.intent_recognition.jev import JevIntention
 from langHar.agents.langchain_agent import create_agent_executor
+from langHar.agents.tool_policy import ToolPolicy
+from langHar.config import Settings
 
 
 def create_agent_service(settings: Settings | None = None) -> AgentService:
     """在服务端启动阶段调用一次，之后复用返回的 AgentService。"""
     resolved_settings = settings or Settings.from_env()
-    intention = JevIntention(
+    recognizer = JevIntention(
         api_key=resolved_settings.typesafe_api_key,
         catalog=INTENT_CATALOG,
         model=resolved_settings.jev_model,
     )
-    router = IntentRouter(
-        intention=intention,
+    intent_recognition = IntentRecognitionService(
+        recognizer=recognizer,
         allowed_intents=INTENT_CATALOG.keys(),
         confidence_threshold=resolved_settings.intent_confidence_threshold,
     )
@@ -25,4 +26,8 @@ def create_agent_service(settings: Settings | None = None) -> AgentService:
         resolved_settings,
         INTENT_CATALOG,
     )
-    return AgentService(router=router, agent=agent)
+    return AgentService(
+        intent_recognition=intent_recognition,
+        tool_policy=ToolPolicy(INTENT_CATALOG),
+        agent=agent,
+    )

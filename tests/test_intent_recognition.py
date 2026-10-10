@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import ast
 import unittest
 from collections.abc import Sequence
+from pathlib import Path
 from unittest.mock import patch
 
-from langHar.agents.core.Intention import (
+from langHar.agents.intent_recognition import IntentRecognitionService
+from langHar.agents.intent_recognition.recognizer import (
     Intention,
     IntentionRecognitionUnavailable,
     IntentMatch,
 )
 from langHar.agents.core.chat_message import ChatMessage
-from langHar.agents.intent_router import IntentRouter
 from langHar.config import Settings
 
 
@@ -37,46 +39,74 @@ def match(intent: str, confidence: float) -> IntentMatch:
     )
 
 
-class IntentRouterTests(unittest.IsolatedAsyncioTestCase):
+class IntentRecognitionServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_accepts_known_high_confidence_intent(self) -> None:
-        router = IntentRouter(FakeIntention(match("weather", 0.9)), {"weather"})
+        service = IntentRecognitionService(
+            FakeIntention(match("weather", 0.9)),
+            {"weather"},
+        )
 
-        decision = await router.route("北京天气", [])
+        decision = await service.recognize("北京天气", [])
 
         self.assertTrue(decision.accepted)
         self.assertEqual(decision.target, "weather")
         self.assertEqual(decision.reason, "intent_accepted")
 
     async def test_rejects_low_confidence_intent(self) -> None:
-        router = IntentRouter(
+        service = IntentRecognitionService(
             FakeIntention(match("weather", 0.4)),
             {"weather"},
             confidence_threshold=0.55,
         )
 
-        decision = await router.route("可能查天气", [])
+        decision = await service.recognize("可能查天气", [])
 
         self.assertFalse(decision.accepted)
         self.assertIsNone(decision.target)
         self.assertEqual(decision.reason, "intent_confidence_below_threshold")
 
     async def test_rejects_unknown_intent(self) -> None:
-        router = IntentRouter(FakeIntention(match("orders", 0.9)), {"weather"})
+        service = IntentRecognitionService(
+            FakeIntention(match("orders", 0.9)),
+            {"weather"},
+        )
 
-        decision = await router.route("查订单", [])
+        decision = await service.recognize("查订单", [])
 
         self.assertFalse(decision.accepted)
         self.assertEqual(decision.reason, "unknown_intent")
 
     async def test_fails_closed_when_recognition_is_unavailable(self) -> None:
-        router = IntentRouter(FakeIntention(), {"weather"})
+        service = IntentRecognitionService(FakeIntention(), {"weather"})
 
-        decision = await router.route("北京天气", [])
+        decision = await service.recognize("北京天气", [])
 
         self.assertFalse(decision.accepted)
         self.assertIsNone(decision.target)
         self.assertEqual(decision.reason, "intention_unavailable")
         self.assertIsNone(decision.match.intent)
+
+
+class IntentRecognitionBoundaryTests(unittest.TestCase):
+    def test_agent_service_only_uses_public_intent_service(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        path = project_root / "langHar" / "agents" / "agent_service.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imports = {
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        }
+
+        self.assertIn("langHar.agents.intent_recognition", imports)
+        self.assertTrue(
+            {
+                "langHar.agents.intent_recognition.catalog",
+                "langHar.agents.intent_recognition.jev",
+                "langHar.agents.intent_recognition.recognizer",
+                "langHar.agents.intent_recognition.service",
+            }.isdisjoint(imports)
+        )
 
 
 class SettingsTests(unittest.TestCase):

@@ -63,8 +63,8 @@ Next.js 会将 `/api/*` 同源转发到 `BACKEND_URL`，使后端 HttpOnly Cooki
 演示账号：
 
 ```text
-admin / password
-tony / 123456
+admin / password  # admin
+tony / 123456     # user
 ```
 
 ## 验证

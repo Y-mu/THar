@@ -6,8 +6,9 @@ import { useEffect, useState } from "react";
 import { ApiError, apiRequest } from "@/shared/api/client";
 
 type CurrentUser = {
-  user_id: string;
+  user_id: number;
   username: string;
+  identity_level: "user" | "admin";
 };
 
 type AuthState = "loading" | "guest" | "authenticated" | "unavailable";

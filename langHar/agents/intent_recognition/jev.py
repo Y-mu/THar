@@ -5,13 +5,13 @@ from collections.abc import Mapping, Sequence
 
 from typesafe_sdk import Choice, TypeSafeClient
 
-from langHar.agents.core.Intention import (
+from langHar.agents.core.chat_message import ChatMessage
+from langHar.agents.intent_recognition.catalog import IntentSpec
+from langHar.agents.intent_recognition.recognizer import (
     Intention,
     IntentionRecognitionUnavailable,
     IntentMatch,
 )
-from langHar.agents.core.chat_message import ChatMessage
-from langHar.agents.intent_catalog import IntentSpec
 
 
 class JevIntention(Intention):

@@ -16,25 +16,29 @@ uvicorn langHar.api.app:app --reload --host 127.0.0.1 --port 8000
 
 ```text
 用户输入
-  → JevIntention：只负责意图识别
-  → IntentRouter：检查未知意图和置信度
+  → IntentRecognitionService
+      → JevIntention：调用外部识别服务
+      → 检查未知意图和置信度
       ├─ 拒绝：返回澄清提示，不创建 Agent
-      └─ 接受：调用启动时已创建的单 Agent
+      └─ 接受：ToolPolicy 检查意图和身份等级
+          ├─ 拒绝：返回无权限提示，不执行工具
+          └─ 接受：调用启动时已创建的单 Agent
 ```
 
 服务启动时，`create_agent_service()` 只创建一个 Agent。请求期间不重复创建
 模型或 Agent；路由结果用于从 `INTENT_CATALOG` 选择系统提示词。
 
-当前是便于继续手写的最小骨架，Agent 暂未注册业务工具。天气和计算工具的
-动态授权、执行与工具事件可在下一步逐项接入。
+每次调用通过 `AgentContext` 显式传入 `session_id`、`user_id`、身份等级和
+历史消息。LangChain 中间件只向模型暴露本次获得授权的工具，并在工具实际
+执行前再次检查权限。
 
 关键文件：
 
-- `langHar/agents/jev_intention.py`：JEV 意图识别适配器。
-- `langHar/agents/intent_router.py`：故障关闭的路由策略。
-- `langHar/agents/intent_catalog.py`：意图、criteria、提示词和工具权限的单一配置源。
-- `langHar/agents/bootstrap.py`：服务端 composition root，只在启动阶段调用一次。
+- `langHar/agents/intent_recognition`：意图目录、识别契约、JEV 适配器和故障关闭服务。
+- `langHar/agents/factory.py`：创建并组装服务端 Agent，只在启动阶段调用一次。
 - `langHar/agents/agent_service.py`：无状态的意图路由与 Agent 执行服务。
+- `langHar/agents/core/agent_context.py`：一次 Agent 调用的身份和历史上下文。
+- `langHar/agents/tool_policy.py`：意图与身份等级的工具授权策略。
 - `langHar/agents/langchain_agent.py`：创建并封装唯一的 LangChain Agent。
 - `langHar/agents/core/agent_event.py`：框架无关的流式事件。
 - `langHar/api/app.py`：FastAPI 应用和 lifespan。
@@ -69,8 +73,8 @@ TYPESAFE_API_KEY=你的_JEV_Token
 当前 MVP 在 `AuthService.login()` 中写死了两组演示账号：
 
 ```text
-admin / password
-tony / 123456
+admin / password  # admin，可使用天气和计算工具
+tony / 123456     # user，可使用天气工具
 ```
 
 后续接入数据库时，应删除硬编码账号并使用密码哈希。
@@ -114,7 +118,7 @@ curl -N -b cookies.txt \
 在 Web 服务的 startup/lifespan 阶段创建一次：
 
 ```python
-from langHar.agents.bootstrap import create_agent_service
+from langHar.agents.factory import create_agent_service
 
 agent_service = create_agent_service()
 ```
@@ -122,16 +126,24 @@ agent_service = create_agent_service()
 后续接口取得会话历史后调用：
 
 ```python
-answer = await agent_service.handle_message(
+from langHar.agents.core.agent_context import AgentContext, IdentityLevel
+
+final_event = await agent_service.invoke(
     "北京天气怎么样",
-    session_id="session-123",
-    history=history,
+    context=AgentContext(
+        session_id="session-123",
+        user_id=0,
+        identity_level=IdentityLevel.ADMIN,
+        history=history,
+    ),
 )
 ```
 
-流式接口使用 `stream_message(...)`，当前只产出 `token` 和 `final` 事件。
+非流式接口 `invoke(...)` 返回最终 `AgentEvent`；流式接口 `stream(...)`
+产出 `token`、工具和 `final` 事件。
 接口层负责读取和持久化会话历史，并且只应保存用户消息和 `final` 回答。
-所有调用都必须传入非空 `session_id`，并始终先经过意图路由。
+所有调用都必须通过 `AgentContext` 传入非空 `session_id`，并始终先经过
+意图路由和工具授权。
 
 ## 测试
 

@@ -37,12 +37,20 @@ async def login(
         secure=service.cookie_secure,
         path="/",
     )
-    return LoginResponse(user_id=user.user_id, username=user.username)
+    return LoginResponse(
+        user_id=user.user_id,
+        username=user.username,
+        identity_level=user.identity_level,
+    )
 
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse(user_id=user.user_id, username=user.username)
+    return UserResponse(
+        user_id=user.user_id,
+        username=user.username,
+        identity_level=user.identity_level,
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

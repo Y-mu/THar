@@ -8,8 +8,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from langHar.agents.core.agent_context import AgentContext, IdentityLevel
 from langHar.agents.core.agent_event import AgentEvent
-from langHar.agents.core.chat_message import ChatMessage
 from langHar.api.app import create_app
 from langHar.api.modules.auth.service import AUTH_COOKIE_NAME, AuthService
 from langHar.api.modules.chat.router import router as chat_router
@@ -22,18 +22,17 @@ from langHar.api.modules.conversation.service import (
 
 class FakeAgentService:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str, Sequence[ChatMessage]]] = []
+        self.calls: list[tuple[str, AgentContext]] = []
         self.closed = False
         self.include_tool_events = False
 
-    async def stream_message(
+    async def stream(
         self,
         message: str,
         *,
-        session_id: str,
-        history: Sequence[ChatMessage] = (),
+        context: AgentContext,
     ):
-        self.calls.append((message, session_id, history))
+        self.calls.append((message, context))
         answer = f"回答：{message}"
         if self.include_tool_events:
             yield AgentEvent(type="tool_start", content="", name="calculator")
@@ -79,6 +78,7 @@ class ApiTests(unittest.TestCase):
         me = self.client.get("/api/v1/users/me")
         self.assertEqual(me.status_code, 200)
         self.assertEqual(me.json()["username"], "admin")
+        self.assertEqual(me.json()["identity_level"], "admin")
 
     def test_invalid_login_does_not_set_cookie(self) -> None:
         response = self.client.post(
@@ -122,7 +122,11 @@ class ApiTests(unittest.TestCase):
             ["user", "assistant"],
         )
         self.assertEqual(len(self.agent.calls), 1)
-        self.assertEqual(self.agent.calls[0][2], ())
+        self.assertEqual(self.agent.calls[0][1].history, ())
+        self.assertEqual(
+            self.agent.calls[0][1].identity_level,
+            IdentityLevel.ADMIN,
+        )
 
         second = self.client.post(
             f"/api/v1/chat/{conversation_id}/messages",
@@ -133,7 +137,7 @@ class ApiTests(unittest.TestCase):
             [event["type"] for event in _sse_payloads(second.text)],
             ["token", "final"],
         )
-        self.assertEqual(len(self.agent.calls[1][2]), 2)
+        self.assertEqual(len(self.agent.calls[1][1].history), 2)
 
     def test_logout_invalidates_cookie(self) -> None:
         self.login()
@@ -172,12 +176,25 @@ class ApiTests(unittest.TestCase):
             json={"username": "tony", "password": "123456"},
         )
         self.assertEqual(tony_login.status_code, 200)
-        self.assertEqual(tony_login.json()["user_id"], "user-2")
+        self.assertEqual(tony_login.json()["user_id"], 1)
+        self.assertEqual(tony_login.json()["identity_level"], "l2")
 
         response = self.client.get(
             f"/api/v1/conversations/{admin_conversation_id}"
         )
         self.assertEqual(response.status_code, 404)
+
+        tony_conversation_id = self.client.post("/api/v1/conversations").json()[
+            "conversation_id"
+        ]
+        self.client.post(
+            f"/api/v1/chat/{tony_conversation_id}/messages",
+            json={"content": "你好"},
+        )
+        self.assertEqual(
+            self.agent.calls[-1][1].identity_level,
+            IdentityLevel.L2,
+        )
 
     def test_lifespan_closes_agent(self) -> None:
         self.assertFalse(self.agent.closed)
@@ -213,10 +230,10 @@ def _imported_modules(path: Path) -> set[str]:
 class ConversationOwnershipTests(unittest.IsolatedAsyncioTestCase):
     async def test_user_cannot_read_another_users_conversation(self) -> None:
         service = ConversationService()
-        conversation = await service.create("user-a")
+        conversation = await service.create(1)
 
         with self.assertRaises(ConversationNotFoundError):
-            await service.get(conversation.conversation_id, "user-b")
+            await service.get(conversation.conversation_id, 2)
 
 
 class ApiModuleBoundaryTests(unittest.TestCase):

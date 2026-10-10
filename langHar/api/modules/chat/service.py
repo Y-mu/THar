@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator
 
 from langHar.agents.agent_service import AgentService
+from langHar.agents.core.agent_context import AgentContext, IdentityLevel
 from langHar.agents.core.agent_event import AgentEvent
 from langHar.agents.core.chat_message import ChatMessage
 from langHar.api.modules.conversation.service import ConversationService
@@ -27,7 +28,8 @@ class ChatService:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        user_id: int,
+        identity_level: IdentityLevel,
         content: str,
     ) -> AsyncIterator[AgentEvent]:
         # 在返回事件流前验证会话归属，让调用方同步处理访问错误。
@@ -35,6 +37,7 @@ class ChatService:
         return self._stream_message(
             conversation_id=conversation_id,
             user_id=user_id,
+            identity_level=identity_level,
             content=content,
         )
 
@@ -42,7 +45,8 @@ class ChatService:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        user_id: int,
+        identity_level: IdentityLevel,
         content: str,
     ) -> AsyncIterator[AgentEvent]:
         lock = await self._get_conversation_lock(conversation_id)
@@ -55,10 +59,14 @@ class ChatService:
                 ChatMessage(role=message.role, content=message.content)
                 for message in stored_history
             )
-            async for event in self._agent.stream_message(
+            async for event in self._agent.stream(
                 content,
-                session_id=conversation_id,
-                history=agent_history,
+                context=AgentContext(
+                    session_id=conversation_id,
+                    user_id=user_id,
+                    identity_level=identity_level,
+                    history=agent_history,
+                ),
             ):
                 if event.type == "final":
                     if not event.content.strip():

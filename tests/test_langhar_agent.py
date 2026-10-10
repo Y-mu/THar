@@ -5,15 +5,22 @@ from collections.abc import AsyncIterator, Sequence
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from langHar.agents.agent_service import AgentService, CLARIFICATION_MESSAGE
-from langHar.agents.core.Intention import Intention, IntentMatch
+from langHar.agents.agent_service import (
+    AgentService,
+    CLARIFICATION_MESSAGE,
+    TOOL_ACCESS_DENIED_MESSAGE,
+)
+from langHar.agents.intent_recognition import IntentRecognitionService
+from langHar.agents.intent_recognition.catalog import INTENT_CATALOG
+from langHar.agents.intent_recognition.recognizer import Intention, IntentMatch
+from langHar.agents.core.agent_context import AgentContext, IdentityLevel
 from langHar.agents.core.agent_event import AgentEvent
 from langHar.agents.core.chat_message import ChatMessage
-from langHar.agents.intent_catalog import INTENT_CATALOG
-from langHar.agents.intent_router import IntentRouter
 from langHar.agents.langchain_agent import LangChainAgentExecutor
-from langHar.agents.bootstrap import create_agent_service
+from langHar.agents.agent_factory import create_agent_service
+from langHar.agents.tool_policy import ToolPolicy
 from langHar.config import Settings
+from langHar.tools.base_tools import TOOL_REGISTRY
 
 
 class FakeIntention(Intention):
@@ -36,17 +43,20 @@ class FakeIntention(Intention):
 class FakeExecutor:
     def __init__(self, answer: str) -> None:
         self.answer = answer
-        self.calls: list[tuple[Sequence[ChatMessage], str, str]] = []
+        self.calls: list[
+            tuple[Sequence[ChatMessage], AgentContext, str, Sequence[str]]
+        ] = []
         self.close_calls = 0
 
     async def stream(
         self,
         messages: Sequence[ChatMessage],
         *,
-        session_id: str,
+        context: AgentContext,
         intent: str,
+        allowed_tools: Sequence[str],
     ) -> AsyncIterator[AgentEvent]:
-        self.calls.append((messages, session_id, intent))
+        self.calls.append((messages, context, intent, allowed_tools))
         yield AgentEvent(type="token", content=self.answer)
         yield AgentEvent(type="final", content=self.answer)
 
@@ -81,16 +91,19 @@ class FakeCompiledAgent:
         self._events = events
         self.input: object = None
         self.config: object = None
+        self.context: object = None
 
     async def astream_events(
         self,
         input: object,
         config: object,
         *,
+        context: object,
         version: str,
     ) -> AsyncIterator[dict[str, object]]:
         self.input = input
         self.config = config
+        self.context = context
         self.version = version
         for event in self._events:
             yield event
@@ -105,51 +118,93 @@ def create_service(
     *,
     confidence: float = 0.99,
 ) -> tuple[AgentService, FakeExecutor]:
-    router = IntentRouter(
+    intent_recognition = IntentRecognitionService(
         FakeIntention(intent, confidence),
         INTENT_CATALOG.keys(),
     )
     executor = FakeExecutor("single-agent-answer")
-    return AgentService(router=router, agent=executor), executor
+    return AgentService(
+        intent_recognition=intent_recognition,
+        tool_policy=ToolPolicy(INTENT_CATALOG),
+        agent=executor,
+    ), executor
+
+
+def agent_context(
+    *,
+    identity_level: IdentityLevel = IdentityLevel.ADMIN,
+    history: tuple[ChatMessage, ...] = (),
+) -> AgentContext:
+    return AgentContext(
+        session_id="session-1",
+        user_id=0,
+        identity_level=identity_level,
+        history=history,
+    )
 
 
 class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_reuses_single_prebuilt_agent_with_routed_intent(self) -> None:
         service, executor = create_service("weather")
 
-        first = await service.handle_message(
+        first = await service.invoke(
             "北京天气",
-            session_id="session-1",
-            history=(ChatMessage(role="assistant", content="你好"),),
+            context=agent_context(
+                history=(ChatMessage(role="assistant", content="你好"),),
+            ),
         )
-        second = await service.handle_message(
+        second = await service.invoke(
             "上海天气",
-            session_id="session-1",
+            context=agent_context(),
         )
 
-        self.assertEqual(first, "single-agent-answer")
-        self.assertEqual(second, "single-agent-answer")
+        self.assertEqual(first.content, "single-agent-answer")
+        self.assertEqual(second.content, "single-agent-answer")
         self.assertEqual(len(executor.calls), 2)
-        messages, session_id, intent = executor.calls[0]
-        self.assertEqual(session_id, "session-1")
+        messages, context, intent, allowed_tools = executor.calls[0]
+        self.assertEqual(context.session_id, "session-1")
         self.assertEqual(intent, "weather")
+        self.assertEqual(allowed_tools, ("get_weather",))
         self.assertEqual(messages[-1], ChatMessage(role="user", content="北京天气"))
 
     async def test_low_confidence_clarifies_without_executing_agent(self) -> None:
         service, executor = create_service("general_chat", confidence=0.1)
 
-        answer = await service.handle_message(
+        event = await service.invoke(
             "随便聊聊",
-            session_id="session-2",
+            context=agent_context(),
         )
 
-        self.assertEqual(answer, CLARIFICATION_MESSAGE)
+        self.assertEqual(event.content, CLARIFICATION_MESSAGE)
+        self.assertEqual(event.reason, "intent_confidence_below_threshold")
         self.assertEqual(executor.calls, [])
 
-    async def test_rejects_empty_session_id(self) -> None:
-        service, _ = create_service("general_chat")
+    async def test_context_rejects_empty_session_id(self) -> None:
         with self.assertRaisesRegex(ValueError, "session_id"):
-            await service.handle_message("你好", session_id="  ")
+            AgentContext(
+                session_id="  ",
+                user_id=0,
+                identity_level=IdentityLevel.L2,
+            )
+
+    async def test_identity_level_denies_unavailable_tool(self) -> None:
+        service, executor = create_service("calculator")
+
+        event = await service.invoke(
+            "1+1",
+            context=agent_context(identity_level=IdentityLevel.L2),
+        )
+
+        self.assertEqual(event.content, TOOL_ACCESS_DENIED_MESSAGE)
+        self.assertEqual(event.reason, "tool_access_denied")
+        self.assertEqual(executor.calls, [])
+
+    async def test_admin_receives_intent_tools(self) -> None:
+        service, executor = create_service("calculator")
+
+        await service.invoke("1+1", context=agent_context())
+
+        self.assertEqual(executor.calls[0][3], ("calculate",))
 
     async def test_closes_agent_resources(self) -> None:
         service, executor = create_service("general_chat")
@@ -163,6 +218,16 @@ class LangChainAgentExecutorTests(unittest.IsolatedAsyncioTestCase):
     async def test_preserves_stream_and_session_events(self) -> None:
         compiled = FakeCompiledAgent(
             [
+                {
+                    "event": "on_tool_start",
+                    "name": "get_weather",
+                    "data": {"input": {"location": "北京"}},
+                },
+                {
+                    "event": "on_tool_end",
+                    "name": "get_weather",
+                    "data": {"output": "北京晴朗"},
+                },
                 {
                     "event": "on_chat_model_stream",
                     "data": {"chunk": SimpleNamespace(content="北京晴朗")},
@@ -187,23 +252,36 @@ class LangChainAgentExecutorTests(unittest.IsolatedAsyncioTestCase):
             event
             async for event in executor.stream(
                 [ChatMessage(role="user", content="北京天气")],
-                session_id="session-3",
+                context=AgentContext(
+                    session_id="session-3",
+                    user_id=0,
+                    identity_level=IdentityLevel.ADMIN,
+                ),
                 intent="weather",
+                allowed_tools=("get_weather",),
             )
         ]
 
         self.assertEqual(
             [event.type for event in events],
-            ["token", "final"],
+            ["tool_start", "tool_end", "token", "final"],
         )
+        self.assertEqual(events[0].name, "get_weather")
+        self.assertEqual(events[1].content, "北京晴朗")
         self.assertEqual(events[-1].content, "北京晴朗")
         self.assertEqual(
             compiled.config,
             {
                 "configurable": {"thread_id": "session-3"},
-                "metadata": {"session_id": "session-3", "intent": "weather"},
+                "metadata": {
+                    "session_id": "session-3",
+                    "user_id": 0,
+                    "identity_level": "admin",
+                    "intent": "weather",
+                },
             },
         )
+        self.assertEqual(compiled.context.allowed_tools, {"get_weather"})
         self.assertEqual(
             compiled.input["messages"][0],
             {
@@ -231,8 +309,8 @@ class LangChainAgentExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.root_client.close_calls, 1)
 
 
-class BootstrapTests(unittest.TestCase):
-    def test_creates_exactly_one_toolless_agent_at_startup(self) -> None:
+class AgentFactoryTests(unittest.TestCase):
+    def test_creates_one_agent_with_catalog_tools_at_startup(self) -> None:
         with (
             patch(
                 "langHar.agents.langchain_agent.create_chat_model",
@@ -249,7 +327,11 @@ class BootstrapTests(unittest.TestCase):
         create.assert_called_once()
         call = create.call_args
         self.assertEqual(call.kwargs["name"], "intent_agent")
-        self.assertEqual(call.kwargs["tools"], [])
+        self.assertEqual(
+            {tool.name for tool in call.kwargs["tools"]},
+            {TOOL_REGISTRY["calculate"].name, TOOL_REGISTRY["get_weather"].name},
+        )
+        self.assertEqual(len(call.kwargs["middleware"]), 2)
 
 
 if __name__ == "__main__":

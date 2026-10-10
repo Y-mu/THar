@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 
+from langHar.agents.core.agent_context import AgentContext
 from langHar.agents.core.agent_event import AgentEvent
 from langHar.agents.core.agent_executor import AgentExecutor
 from langHar.agents.core.chat_message import ChatMessage
-from langHar.agents.intent_router import IntentRouter
+from langHar.agents.intent_recognition import IntentRecognitionService
+from langHar.agents.tool_policy import ToolPolicy
 
 
 CLARIFICATION_MESSAGE = "我还不能确定你的需求，请再具体说明一下。"
+TOOL_ACCESS_DENIED_MESSAGE = "当前身份无权使用该能力。"
 
 
 class AgentService:
@@ -17,42 +20,41 @@ class AgentService:
     def __init__(
         self,
         *,
-        router: IntentRouter,
+        intent_recognition: IntentRecognitionService,
+        tool_policy: ToolPolicy,
         agent: AgentExecutor,
     ) -> None:
-        self._router = router
+        self._intent_recognition = intent_recognition
+        self._tool_policy = tool_policy
         self._agent = agent
 
-    async def handle_message(
+    async def invoke(
         self,
         message: str,
         *,
-        session_id: str,
-        history: Sequence[ChatMessage] = (),
-    ) -> str:
-        final_answer = ""
-        async for event in self.stream_message(
+        context: AgentContext,
+    ) -> AgentEvent:
+        async for event in self.stream(
             message,
-            session_id=session_id,
-            history=history,
+            context=context,
         ):
             if event.type == "final":
-                final_answer = event.content
-        return final_answer
+                return event
+        raise RuntimeError("Agent 流未返回 final 事件。")
 
-    async def stream_message(
+    async def stream(
         self,
         message: str,
         *,
-        session_id: str,
-        history: Sequence[ChatMessage] = (),
+        context: AgentContext,
     ) -> AsyncIterator[AgentEvent]:
-        if not session_id.strip():
-            raise ValueError("session_id 不能为空。")
         if not message.strip():
             raise ValueError("message 不能为空。")
 
-        decision = await self._router.route(message, history)
+        decision = await self._intent_recognition.recognize(
+            message,
+            context.history,
+        )
         if not decision.accepted:
             yield AgentEvent(
                 type="final",
@@ -65,14 +67,26 @@ class AgentService:
         if target is None:
             raise RuntimeError("已拒绝的路由不能执行 Agent。")
 
-        messages = (*history, ChatMessage(role="user", content=message))
+        tool_access = self._tool_policy.authorize(
+            intent=target,
+            identity_level=context.identity_level,
+        )
+        if not tool_access.accepted:
+            yield AgentEvent(
+                type="final",
+                content=TOOL_ACCESS_DENIED_MESSAGE,
+                reason=tool_access.reason,
+            )
+            return
+
+        messages = (*context.history, ChatMessage(role="user", content=message))
         async for event in self._agent.stream(
             messages,
-            session_id=session_id,
+            context=context,
             intent=target,
+            allowed_tools=tool_access.tools,
         ):
             yield event
 
     async def aclose(self) -> None:
         await self._agent.aclose()
-

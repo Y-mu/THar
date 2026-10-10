@@ -27,3 +27,4 @@ class Intention(ABC):
         context: Sequence[ChatMessage],
     ) -> IntentMatch:
         """只识别意图，不决定路由，也不执行 Agent。"""
+

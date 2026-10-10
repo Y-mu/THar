@@ -3,28 +3,28 @@ from __future__ import annotations
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 
-from langHar.agents.core.Intention import (
+from langHar.agents.core.chat_message import ChatMessage
+from langHar.agents.intent_recognition.recognizer import (
     Intention,
     IntentionRecognitionUnavailable,
     IntentMatch,
 )
-from langHar.agents.core.chat_message import ChatMessage
 
 
 @dataclass(frozen=True, slots=True)
-class RoutingDecision:
+class IntentDecision:
     accepted: bool
     target: str | None
     reason: str
     match: IntentMatch
 
 
-class IntentRouter:
-    """根据识别结果执行故障关闭的路由策略。"""
+class IntentRecognitionService:
+    """对外提供故障关闭的可信意图识别结果。"""
 
     def __init__(
         self,
-        intention: Intention,
+        recognizer: Intention,
         allowed_intents: Collection[str],
         confidence_threshold: float = 0.55,
     ) -> None:
@@ -32,17 +32,17 @@ class IntentRouter:
             raise ValueError("allowed_intents 不能为空。")
         if not 0 <= confidence_threshold <= 1:
             raise ValueError("confidence_threshold 必须在 0 到 1 之间。")
-        self._intention = intention
+        self._recognizer = recognizer
         self._allowed_intents = frozenset(allowed_intents)
         self._confidence_threshold = confidence_threshold
 
-    async def route(
+    async def recognize(
         self,
         current_message: str,
         context: Sequence[ChatMessage],
-    ) -> RoutingDecision:
+    ) -> IntentDecision:
         try:
-            match = await self._intention.classify(current_message, context)
+            match = await self._recognizer.classify(current_message, context)
         except IntentionRecognitionUnavailable:
             return self._reject(
                 IntentMatch(
@@ -60,7 +60,7 @@ class IntentRouter:
             return self._reject(match, "unknown_intent")
         if match.confidence < self._confidence_threshold:
             return self._reject(match, "intent_confidence_below_threshold")
-        return RoutingDecision(
+        return IntentDecision(
             accepted=True,
             target=match.intent,
             reason="intent_accepted",
@@ -68,10 +68,11 @@ class IntentRouter:
         )
 
     @staticmethod
-    def _reject(match: IntentMatch, reason: str) -> RoutingDecision:
-        return RoutingDecision(
+    def _reject(match: IntentMatch, reason: str) -> IntentDecision:
+        return IntentDecision(
             accepted=False,
             target=None,
             reason=reason,
             match=match,
         )
+
