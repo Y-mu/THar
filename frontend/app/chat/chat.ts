@@ -2,6 +2,8 @@ import { ApiError, apiFetch, apiRequest } from "@/shared/api/client";
 
 import type { ChatEvent, Conversation, ConversationSummary } from "./types";
 
+type ChatEventHandler = (event: ChatEvent) => void | Promise<void>;
+
 export function listConversations(
   signal?: AbortSignal,
 ): Promise<ConversationSummary[]> {
@@ -25,7 +27,7 @@ export function getConversation(
 export async function streamChatMessage(
   conversationId: string,
   content: string,
-  onEvent: (event: ChatEvent) => void,
+  onEvent: ChatEventHandler,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await apiFetch(`/api/v1/chat/${conversationId}/messages`, {
@@ -55,7 +57,7 @@ export async function streamChatMessage(
       const event = parseEvent(block);
 
       if (event) {
-        onEvent(event);
+        await onEvent(event);
         if (event.type === "error") {
           throw new Error(event.content);
         }
@@ -74,7 +76,7 @@ export async function streamChatMessage(
 
   const trailingEvent = parseEvent(buffer);
   if (trailingEvent) {
-    onEvent(trailingEvent);
+    await onEvent(trailingEvent);
     if (trailingEvent.type === "error") {
       throw new Error(trailingEvent.content);
     }

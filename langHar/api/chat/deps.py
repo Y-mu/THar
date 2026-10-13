@@ -1,7 +1,7 @@
 from fastapi import Request
 
 from langHar.api.deps import get_container
-from langHar.orchestration.chat_service import ChatService
+from langHar.api.chat.chat_service import ChatService
 
 
 def get_chat_service(request: Request) -> ChatService:

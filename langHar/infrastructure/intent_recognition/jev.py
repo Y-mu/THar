@@ -5,8 +5,8 @@ from collections.abc import Mapping, Sequence
 
 from typesafe_sdk import Choice, TypeSafeClient
 
+from langHar.capabilities.intents import IntentSpec
 from langHar.core.agent import ChatMessage
-from langHar.infrastructure.intent_recognition.catalog import IntentSpec
 from langHar.orchestration.intent_router import (
     IntentMatch,
     IntentRecognitionUnavailable,

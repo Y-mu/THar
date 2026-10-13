@@ -9,8 +9,8 @@ from langHar.core.agent import (
     ChatMessage,
     IdentityLevel,
 )
-from langHar.orchestration.agent_service import AgentService
-from langHar.orchestration.session_manager import SessionManager
+from langHar.api.chat.ports import AgentCaller
+from langHar.api.session.session_manager import SessionManager
 
 
 class ChatService:
@@ -20,7 +20,7 @@ class ChatService:
         self,
         *,
         sessions: SessionManager,
-        agent: AgentService,
+        agent: AgentCaller,
     ) -> None:
         self._sessions = sessions
         self._agent = agent

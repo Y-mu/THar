@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from langHar.api.auth.deps import get_auth_service, get_current_user
 from langHar.api.auth.schemas import LoginRequest, LoginResponse, UserResponse
-from langHar.orchestration.auth_service import (
+from langHar.api.auth.auth_service import (
     AUTH_COOKIE_NAME,
     AuthService,
     User,

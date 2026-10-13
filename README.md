@@ -79,7 +79,9 @@ uvicorn langHar.main:app --reload --host 127.0.0.1 --port 8000
 flowchart LR
     Client[客户端] --> API[FastAPI 业务模块]
     API --> Chat[ChatService]
-    Chat --> Router[IntentRouter]
+    Chat --> Port[AgentCaller]
+    Port --> Service[AgentService]
+    Service --> Router[IntentRouter]
     Router -->|unknown / low confidence| Clarify[澄清回答]
     Router -->|accepted| Policy[ToolPolicy]
     Policy -->|denied| Denied[权限不足]
@@ -92,22 +94,23 @@ flowchart LR
 2. `IntentRouter` 校验未知意图、置信度和识别失败。
 3. `ToolPolicy` 根据意图和身份等级计算当前工具集合。
 4. LangChain 中间件先过滤模型可见工具，工具执行前再做一次校验。
-5. `ChatService` 只持久化用户消息和最终助手回答，不保存内部工具记录。
+5. `ChatService` 通过 `AgentCaller` 端口发起单次调用，只持久化用户消息和最终助手回答，不保存内部工具记录。
 
 ## 项目结构
 
 ```text
 langHar/
-├── api/                          # FastAPI 接入层，按业务模块组织
-│   ├── auth/                    # 登录、Cookie 身份、认证 Schema
-│   ├── chat/                    # 对话路由、Schema、SSE
-│   ├── session/                 # Agent 对话会话
+├── api/                          # Web 应用边界，按业务模块组织
+│   ├── auth/                    # 登录、Cookie 身份和 AuthService
+│   ├── chat/                    # ChatService、AgentCaller、Schema 和 SSE
+│   ├── session/                 # Conversation 状态、历史和 SessionManager
 │   ├── health/                  # 存活与就绪检查
 │   ├── app.py                   # FastAPI 应用和 lifespan
 │   └── deps.py                  # 跨模块容器契约
 ├── core/                         # 框架无关数据契约
-├── orchestration/                # 意图、Agent、聊天和会话编排
+├── orchestration/                # Agent 内部意图、安全策略和执行编排
 ├── capabilities/
+│   ├── intents/                 # 意图名称和 criteria
 │   ├── prompts/                 # Prompt 资产
 │   └── tools/                   # 工具实现、注册和权限
 ├── infrastructure/
@@ -120,10 +123,10 @@ langHar/
 
 核心原则：
 
-- API 只处理 HTTP、Cookie、Pydantic Schema 和 SSE。
-- Orchestration 是唯一流程所有者，不依赖 FastAPI 或具体模型 SDK。
+- API 管理 Web 登录、Conversation 和历史，通过 `AgentCaller` 端口调用 Agent，不依赖 Agent 具体实现。
+- Orchestration 只拥有 Agent 内部流程，不管理 Web 会话，也不依赖 FastAPI 或具体模型 SDK。
 - Infrastructure 实现外部端口，但不控制业务流程。
-- `bootstrap.py` 是唯一同时组装编排、能力和基础设施实现的地方。
+- `bootstrap.py` 是唯一同时认识 API、Agent 编排、能力和基础设施实现的地方。
 
 更完整的长期架构、RAG 边界和开发约束见 [AGENTS.md](./AGENTS.md)。
 
@@ -196,7 +199,7 @@ final_event = await agent_service.invoke(
 
 ### 新增意图
 
-1. 在 `INTENT_CATALOG` 中增加意图和 criteria。
+1. 在 `capabilities/intents` 的 `INTENT_CATALOG` 中增加意图和 criteria。
 2. 在 Prompt Registry 中增加对应系统提示词。
 3. 在 Tool Catalog 中声明可用工具和身份等级。
 4. 增加高置信度、低置信度和越权测试。

@@ -13,9 +13,9 @@ from langHar.api.chat.route import router as chat_router
 from langHar.api.session.route import router as session_router
 from langHar.bootstrap import AppContainer
 from langHar.core.agent import AgentContext, AgentEvent, IdentityLevel
-from langHar.orchestration.auth_service import AUTH_COOKIE_NAME, AuthService
-from langHar.orchestration.chat_service import ChatService
-from langHar.orchestration.session_manager import (
+from langHar.api.auth.auth_service import AUTH_COOKIE_NAME, AuthService
+from langHar.api.chat.chat_service import ChatService
+from langHar.api.session.session_manager import (
     ConversationNotFoundError,
     SessionManager,
 )
@@ -50,10 +50,10 @@ class ApiTests(unittest.TestCase):
         self.agent = FakeAgentService()
         sessions = SessionManager()
         container = AppContainer(
-            agent_service=self.agent,
             auth_service=AuthService(),
             chat_service=ChatService(sessions=sessions, agent=self.agent),
             session_manager=sessions,
+            _agent_service=self.agent,
         )
         app = create_app(container_factory=lambda: container)
         self.client_context = TestClient(app)
@@ -246,14 +246,20 @@ class ApiModuleBoundaryTests(unittest.TestCase):
         self.assertEqual(session_router.prefix, "/conversations")
         self.assertEqual(chat_router.prefix, "/chat")
 
-    def test_api_routes_do_not_depend_on_infrastructure(self) -> None:
+    def test_api_does_not_depend_on_agent_implementations(self) -> None:
         project_root = Path(__file__).resolve().parents[1]
         api = project_root / "langHar" / "api"
+        forbidden = (
+            "langHar.bootstrap",
+            "langHar.capabilities",
+            "langHar.infrastructure",
+            "langHar.orchestration",
+        )
         violations: list[str] = []
 
         for path in api.rglob("*.py"):
             if any(
-                module.startswith("langHar.infrastructure")
+                module.startswith(forbidden)
                 for module in _imported_modules(path)
             ):
                 violations.append(path.name)

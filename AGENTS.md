@@ -23,10 +23,10 @@ THar 是意图优先的 LLM 对话编排器。用户请求必须先经过可信�
 
 ## 当前架构
 
-- `langHar/api`：FastAPI 接入层，已按 `auth`、`chat`、`session` 和 `health` 业务模块组织。
+- `langHar/api`：Web 应用边界，按 `auth`、`chat`、`session` 和 `health` 业务模块组织；负责认证、Conversation、历史和 HTTP/SSE 适配。
 - `langHar/core`：当前已有的框架无关 Agent 数据契约。
-- `langHar/orchestration`：当前已有的认证、意图路由、Agent、聊天和会话编排。
-- `langHar/capabilities`：当前已有的 Prompt 和 Tool 能力资产。
+- `langHar/orchestration`：Agent 内部编排，负责意图路由、安全策略和单次 Agent 调用，不管理 Web 登录或 Conversation。
+- `langHar/capabilities`：当前已有的 Intent、Prompt 和 Tool 能力资产。
 - `langHar/infrastructure`：当前已有的 JEV、LangChain 和模型供应商适配器。
 - `langHar/config`：Settings 和环境变量入口。
 - `langHar/bootstrap.py`：唯一 composition root。
@@ -46,16 +46,20 @@ langHar/
 │   ├── auth/
 │   │   ├── route.py              # 登录、退出和当前用户接口
 │   │   ├── schemas.py            # 认证请求与响应模型
-│   │   └── deps.py               # Cookie 解析和当前用户依赖
+│   │   ├── deps.py               # Cookie 解析和当前用户依赖
+│   │   └── auth_service.py       # Web 登录身份和 Cookie 会话
 │   ├── chat/
 │   │   ├── route.py              # 对话消息接口
 │   │   ├── schemas.py            # 对话请求与流式事件模型
 │   │   ├── deps.py               # ChatService 依赖
+│   │   ├── ports.py              # API 消费方拥有的 AgentCaller 端口
+│   │   ├── chat_service.py       # 历史读取、单次 Agent 调用和最终消息保存
 │   │   └── sse.py                # AgentEvent 到 SSE 的传输映射
 │   ├── session/
 │   │   ├── route.py              # Agent 对话会话管理
 │   │   ├── schemas.py            # 会话和历史消息响应模型
-│   │   └── deps.py               # SessionManager 依赖
+│   │   ├── deps.py               # SessionManager 依赖
+│   │   └── session_manager.py    # Conversation 状态和历史管理
 │   ├── knowledge/
 │   │   ├── route.py              # 知识库、文档和索引管理接口
 │   │   ├── schemas.py            # 入库、索引和引用的 API 模型
@@ -67,17 +71,18 @@ langHar/
 │   ├── agent.py                   # AgentContext、AgentEvent 和 ChatMessage
 │   └── knowledge.py               # Document、Chunk、Citation 和 Retrieval DTO
 │
-├── orchestration/                # 编排层，唯一流程所有者
+├── orchestration/                # Agent 内部编排层
 │   ├── agent_service.py          # Agent 调用用例和总流程
 │   ├── intent_router.py          # 意图结果校验、故障关闭与路由
 │   ├── agent_executor.py         # Agent 执行端口
 │   ├── knowledge_ingestion.py    # 文档入库、版本和索引编排
 │   ├── retrieval_service.py      # 检索、权限过滤、重排和引用组装
 │   ├── retrieval_ports.py        # 文档、Embedding、向量检索端口
-│   ├── workflow_engine.py        # 多步骤工作流
-│   └── session_manager.py        # Agent 对话状态读写
+│   └── workflow_engine.py        # 多步骤 Agent 工作流
 │
 ├── capabilities/                 # Agent 可使用的能力与资产
+│   ├── intents/
+│   │   └── catalog.py            # 意图名称和 criteria 单一配置源
 │   ├── prompts/
 │   │   ├── registry.py           # Prompt 注册表与 LangSmith Hub 加载
 │   │   └── templates/            # 本地兜底模板
@@ -132,11 +137,12 @@ langHar/
 
 ### 最终边界
 
-- API 只负责 HTTP/Cookie/SSE 的输入输出、身份提取和参数校验，不执行意图决策、工具授权或 Agent 业务流程。
-- API 以 `auth`、`chat`、`session`、`knowledge` 等业务模块为组织单元，每个模块自主管理路由、Pydantic Schemas、专用依赖和传输映射。
-- API 业务模块之间不直接引用对方内部文件；真正跨层共享的数据契约放在 `core`，而不是全局 API `schemas`。
+- API 是 Web 应用边界：路由层只负责 HTTP/Cookie/SSE、身份提取和参数校验；模块 Service 可负责登录、Conversation、历史和 Agent 调用协调，但不执行意图决策或工具授权。
+- API 以 `auth`、`chat`、`session`、`knowledge` 等业务模块为组织单元，每个模块自主管理路由、Pydantic Schemas、专用依赖、Service 和传输映射。
+- API 只能通过消费方拥有的端口调用 Agent，不得导入 Orchestration、Capabilities、Infrastructure 或 Bootstrap 的具体实现。
+- API 模块之间只允许清晰的单向业务依赖；真正跨越 API/Agent 边界的数据契约放在 `core`，而不是全局 API `schemas`。
 - Core 只保存框架无关、可序列化的类型和契约，不依赖 FastAPI、Pydantic、LangChain 或供应商 SDK。
-- Orchestration 是唯一流程所有者，负责意图路由、安全策略、Agent 执行和多步骤工作流，但不直接依赖具体供应商 SDK。
+- Orchestration 是 Agent 内部流程所有者，负责意图路由、安全策略、Agent 执行和多步骤工作流；不管理 Web 登录、Conversation 或历史持久化，也不直接依赖具体供应商 SDK。
 - `intent_recognition` 只负责返回意图分类结果、置信度和模型信息；未知意图、低置信度和失败关闭由 Orchestration 决定。
 - Capabilities 管理 Prompt、Skill、Tool 和 MCP 能力资产；工具权限必须在 `capabilities/tools` 中定义，不得回流到意图识别模块。
 - Infrastructure 封装模型、数据库、缓存、记忆和可观测性等外部 I/O，通过端口被编排层调用。
@@ -167,6 +173,8 @@ langHar/
 
 在线问答
   Chat
+    → AgentCaller
+    → AgentService
     → IntentRouter
     → ToolPolicy
     → knowledge_search
@@ -189,12 +197,12 @@ RAG 建设顺序：
 ## 依赖规则
 
 - Core 不依赖 API、Orchestration、Capabilities、Infrastructure 或任何 Web/AI 框架。
-- API 业务模块可依赖 Orchestration 的公开用例和 Core 契约，不得直接依赖 Infrastructure 中的具体供应商实现。
-- Orchestration 可依赖 Core 契约、框架无关端口和 Capabilities 策略，不得导入 FastAPI、Pydantic、LangChain、LangGraph 或供应商 SDK 类型。
+- API 可依赖 Core 契约和自身定义的消费端口，不得直接依赖 Orchestration、Capabilities、Infrastructure 或 Bootstrap；具体 Agent 实现只允许在 Bootstrap 注入。
+- Orchestration 可依赖 Core 契约、框架无关端口和 Capabilities 策略，不得导入 API、FastAPI、Pydantic、LangChain、LangGraph 或供应商 SDK 类型。
 - Capabilities 不得反向控制 Orchestration；工具和 MCP 运行时通过显式端口使用。
 - Infrastructure 实现端口，但不能控制 Orchestration。
 - RAG Loader、Embedding、Vector Store 和 Reranker 都是 Infrastructure 适配器；Orchestration 只能依赖 `retrieval_ports.py` 中的框架无关端口。
-- Bootstrap/composition root 是唯一允许同时引用 Orchestration、Capabilities 和 Infrastructure 具体实现的地方。
+- Bootstrap/composition root 是唯一允许同时引用 API、Orchestration、Capabilities 和 Infrastructure 具体实现的地方。
 
 最终由 `tests/test_architecture.py` 自动检查这些边界；在该测试落地前，修改时仍必须人工遵守。
 

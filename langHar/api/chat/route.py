@@ -3,13 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sse_starlette import EventSourceResponse
 
-from langHar.api.auth import get_current_user
+from langHar.api.auth.deps import get_current_user
 from langHar.api.chat.deps import get_chat_service
 from langHar.api.chat.schemas import MessageRequest
 from langHar.api.chat.sse import create_chat_stream_response
-from langHar.orchestration.auth_service import User
-from langHar.orchestration.chat_service import ChatService
-from langHar.orchestration.session_manager import ConversationNotFoundError
+from langHar.api.auth.auth_service import User
+from langHar.api.chat.chat_service import ChatService
+from langHar.api.session.session_manager import ConversationNotFoundError
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])

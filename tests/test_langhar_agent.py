@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from langHar.bootstrap import create_agent_service
+from langHar.capabilities.intents import INTENT_CATALOG
 from langHar.capabilities.prompts import PROMPT_REGISTRY
 from langHar.capabilities.tools import TOOL_CATALOG, TOOL_REGISTRY, ToolPolicy
 from langHar.config import Settings
@@ -15,7 +16,6 @@ from langHar.core.agent import (
     ChatMessage,
     IdentityLevel,
 )
-from langHar.infrastructure.intent_recognition.catalog import INTENT_CATALOG
 from langHar.infrastructure.llm.langchain_agent import LangChainAgentExecutor
 from langHar.orchestration.agent_service import (
     AgentService,

@@ -32,14 +32,34 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             self.assertTrue((api_root / module / "route.py").is_file())
             self.assertTrue((api_root / module / "schemas.py").is_file())
 
-    def test_api_does_not_import_infrastructure(self) -> None:
+    def test_api_does_not_import_agent_implementations(self) -> None:
+        forbidden = (
+            "langHar.bootstrap",
+            "langHar.capabilities",
+            "langHar.infrastructure",
+            "langHar.orchestration",
+        )
         violations = [
             str(path.relative_to(PROJECT_ROOT))
             for path in python_files("langHar/api")
             if any(
-                module.startswith(
-                    ("langHar.infrastructure", "langHar.bootstrap")
-                )
+                module.startswith(forbidden)
+                for module in imported_modules(path)
+            )
+        ]
+        self.assertEqual(violations, [])
+
+    def test_agent_layers_do_not_import_api(self) -> None:
+        violations = [
+            str(path.relative_to(PROJECT_ROOT))
+            for relative in (
+                "langHar/orchestration",
+                "langHar/capabilities",
+                "langHar/infrastructure",
+            )
+            for path in python_files(relative)
+            if any(
+                module.startswith("langHar.api")
                 for module in imported_modules(path)
             )
         ]

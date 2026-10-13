@@ -192,14 +192,14 @@ export function ChatPage() {
       await streamChatMessage(
         conversationId,
         content,
-        (chatEvent) => {
-          applyChatEvent(
+        (chatEvent) =>
+          playChatEvent(
             chatEvent,
             assistantMessageId,
             setMessages,
             setToolStatus,
-          );
-        },
+            controller.signal,
+          ),
         controller.signal,
       );
 
@@ -599,6 +599,70 @@ function applyChatEvent(
       };
     }),
   );
+}
+
+async function playChatEvent(
+  event: ChatEvent,
+  assistantMessageId: string,
+  setMessages: React.Dispatch<React.SetStateAction<DisplayMessage[]>>,
+  setToolStatus: React.Dispatch<React.SetStateAction<string | null>>,
+  signal: AbortSignal,
+) {
+  const shouldRevealByCharacter =
+    event.type === "token" &&
+    !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (!shouldRevealByCharacter) {
+    applyChatEvent(event, assistantMessageId, setMessages, setToolStatus);
+    return;
+  }
+
+  for (const character of Array.from(event.content)) {
+    if (signal.aborted) {
+      throw signal.reason ?? new DOMException("请求已取消。", "AbortError");
+    }
+
+    applyChatEvent(
+      { ...event, content: character },
+      assistantMessageId,
+      setMessages,
+      setToolStatus,
+    );
+    await waitForNextPaint(signal);
+  }
+}
+
+function waitForNextPaint(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.reject(
+      signal.reason ?? new DOMException("请求已取消。", "AbortError"),
+    );
+  }
+
+  return new Promise((resolve, reject) => {
+    let timeoutId: number | null = null;
+    let frameId = 0;
+
+    const cleanup = () => {
+      signal.removeEventListener("abort", handleAbort);
+    };
+    const handleAbort = () => {
+      window.cancelAnimationFrame(frameId);
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+      cleanup();
+      reject(signal.reason ?? new DOMException("请求已取消。", "AbortError"));
+    };
+
+    signal.addEventListener("abort", handleAbort, { once: true });
+    frameId = window.requestAnimationFrame(() => {
+      timeoutId = window.setTimeout(() => {
+        cleanup();
+        resolve();
+      }, 0);
+    });
+  });
 }
 
 function toDisplayMessages(messages: ChatMessage[]): DisplayMessage[] {

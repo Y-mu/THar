@@ -1,7 +1,7 @@
 from fastapi import HTTPException, Request, status
 
 from langHar.api.deps import get_container
-from langHar.orchestration.auth_service import AUTH_COOKIE_NAME, AuthService, User
+from langHar.api.auth.auth_service import AUTH_COOKIE_NAME, AuthService, User
 
 
 def get_auth_service(request: Request) -> AuthService:

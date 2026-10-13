@@ -36,7 +36,8 @@ npm run build
 - 未知意图、低置信度或分类服务异常必须进入澄清流程。
 - 工具根据意图和身份等级进行最小授权。
 - Core 不依赖 FastAPI、LangChain、LangGraph 或供应商 SDK。
-- Bootstrap 是唯一可以同时组装编排层与基础设施层的位置。
+- API 只能通过自身定义的端口调用 Agent，不直接导入 Agent 具体实现。
+- Bootstrap 是唯一可以同时组装 API、Agent 编排层与基础设施层的位置。
 - 会话只保存用户消息和最终回答，不保存内部工具记录。
 
 完整约束和长期目标参见 [AGENTS.md](./AGENTS.md)。

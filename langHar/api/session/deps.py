@@ -1,7 +1,7 @@
 from fastapi import Request
 
 from langHar.api.deps import get_container
-from langHar.orchestration.session_manager import SessionManager
+from langHar.api.session.session_manager import SessionManager
 
 
 def get_session_manager(request: Request) -> SessionManager:

@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from langHar.api.auth import get_current_user
+from langHar.api.auth.deps import get_current_user
 from langHar.api.session.deps import get_session_manager
 from langHar.api.session.schemas import (
     ConversationResponse,
     ConversationSummaryResponse,
     MessageResponse,
 )
-from langHar.orchestration.auth_service import User
-from langHar.orchestration.session_manager import (
+from langHar.api.auth.auth_service import User
+from langHar.api.session.session_manager import (
     Conversation,
     ConversationNotFoundError,
     SessionManager,

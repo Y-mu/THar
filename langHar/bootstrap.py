@@ -1,29 +1,29 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from langHar.api.auth.auth_service import AuthService
+from langHar.api.chat.chat_service import ChatService
+from langHar.api.session.session_manager import SessionManager
+from langHar.capabilities.intents import INTENT_CATALOG
 from langHar.capabilities.prompts import PROMPT_REGISTRY
 from langHar.capabilities.tools import TOOL_CATALOG, TOOL_REGISTRY, ToolPolicy
 from langHar.config import Settings
 from langHar.infrastructure.intent_recognition import JevIntentRecognizer
-from langHar.infrastructure.intent_recognition.catalog import INTENT_CATALOG
 from langHar.infrastructure.llm.langchain_agent import create_agent_executor
 from langHar.orchestration.agent_service import AgentService
-from langHar.orchestration.auth_service import AuthService
-from langHar.orchestration.chat_service import ChatService
 from langHar.orchestration.intent_router import IntentRouter
-from langHar.orchestration.session_manager import SessionManager
 
 
 @dataclass(slots=True)
 class AppContainer:
-    agent_service: AgentService
     auth_service: AuthService
     chat_service: ChatService
     session_manager: SessionManager
+    _agent_service: AgentService = field(repr=False)
 
     async def aclose(self) -> None:
-        await self.agent_service.aclose()
+        await self._agent_service.aclose()
 
 
 def create_agent_service(settings: Settings) -> AgentService:
@@ -68,10 +68,10 @@ def create_container(settings: Settings | None = None) -> AppContainer:
         agent=agent_service,
     )
     return AppContainer(
-        agent_service=agent_service,
         auth_service=auth_service,
         chat_service=chat_service,
         session_manager=session_manager,
+        _agent_service=agent_service,
     )
 
 
