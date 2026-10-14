@@ -17,6 +17,9 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.chroma_db/
+chroma_db/
+models/
 .tox/
 .nox/
 build/
@@ -34,6 +37,9 @@ coverage/
 *.swp
 *.swo
 *~
+
+# LangGraph dev server 本地状态
+.langgraph_api/
 
 # IDE and operating system files
 .idea/

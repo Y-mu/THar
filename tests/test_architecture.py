@@ -24,17 +24,40 @@ def python_files(relative: str) -> list[Path]:
 
 
 class ArchitectureBoundaryTests(unittest.TestCase):
+    def test_only_langgraph_owns_chat_and_session_execution(self) -> None:
+        for relative in (
+            "langHar/orchestration/agent_service.py", "langHar/orchestration/agent_executor.py",
+            "langHar/infrastructure/llm/langchain_agent.py", "langHar/infrastructure/llm/knowledge_middleware.py",
+        ):
+            self.assertFalse((PROJECT_ROOT / relative).exists())
+        for module in ("chat", "session"):
+            self.assertEqual(list((PROJECT_ROOT / "langHar/api" / module).glob("*.py")), [])
+        import json
+        config = json.loads((PROJECT_ROOT / "langgraph.json").read_text())
+        self.assertEqual(config["graphs"], {"agent": "./langHar/graph_entry.py:graph"})
+        self.assertNotIn("auth", config)
+        self.assertFalse((PROJECT_ROOT / "langHar/api/langgraph_auth.py").exists())
+
+    def test_knowledge_response_policy_is_framework_independent(self) -> None:
+        forbidden = (
+            "langHar.api", "langHar.infrastructure", "langHar.orchestration",
+            "langchain", "langgraph", "fastapi", "pydantic",
+        )
+        path = PROJECT_ROOT / "langHar/capabilities/knowledge/policy.py"
+        self.assertFalse(any(module.startswith(forbidden) for module in imported_modules(path)))
+
     def test_api_uses_business_modules_without_global_routes_or_schemas(self) -> None:
         api_root = PROJECT_ROOT / "langHar" / "api"
         self.assertFalse((api_root / "routes").exists())
         self.assertFalse((PROJECT_ROOT / "langHar" / "schemas").exists())
-        for module in ("auth", "chat", "session"):
+        for module in ("knowledge",):
             self.assertTrue((api_root / module / "route.py").is_file())
             self.assertTrue((api_root / module / "schemas.py").is_file())
 
     def test_api_does_not_import_agent_implementations(self) -> None:
         forbidden = (
             "langHar.bootstrap",
+            "langHar.composition",
             "langHar.capabilities",
             "langHar.infrastructure",
             "langHar.orchestration",
@@ -68,6 +91,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_orchestration_does_not_import_infrastructure_or_ai_frameworks(self) -> None:
         forbidden = (
             "langHar.infrastructure",
+            "langHar.composition",
             "fastapi",
             "pydantic",
             "langchain",
@@ -91,6 +115,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "langHar.orchestration",
             "langHar.capabilities",
             "langHar.infrastructure",
+            "langHar.composition",
             "fastapi",
             "pydantic",
             "langchain",
@@ -107,7 +132,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         ]
         self.assertEqual(violations, [])
 
-    def test_only_bootstrap_combines_orchestration_and_infrastructure(self) -> None:
+    def test_only_bootstrap_wires_infrastructure_into_graphs(self) -> None:
         violations: list[str] = []
         for path in python_files("langHar"):
             relative = path.relative_to(PROJECT_ROOT)
@@ -125,6 +150,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             )
             if has_orchestration and has_infrastructure:
                 violations.append(str(relative))
+        self.assertEqual(violations, [])
+
+    def test_composition_uses_ports_and_policies_without_importing_api_or_infrastructure(self) -> None:
+        violations = [
+            str(path.relative_to(PROJECT_ROOT))
+            for path in python_files("langHar/composition")
+            if any(module.startswith(("langHar.api", "langHar.infrastructure", "langHar.bootstrap"))
+                   for module in imported_modules(path))
+        ]
         self.assertEqual(violations, [])
 
 

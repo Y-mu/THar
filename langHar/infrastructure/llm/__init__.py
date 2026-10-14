@@ -1,4 +1,1 @@
-from langHar.infrastructure.llm.langchain_agent import LangChainAgentExecutor
-
-
-__all__ = ["LangChainAgentExecutor"]
+"""模型供应商适配器；Agent 执行图位于 composition。"""

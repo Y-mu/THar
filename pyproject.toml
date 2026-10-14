@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "langhar-intent-orchestrator"
 version = "0.1.0"
-description = "An intent-first LangChain agent development scaffold for server-side applications"
+description = "An intent-first LangGraph MVP for Studio and knowledge retrieval"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-keywords = ["agent", "fastapi", "langchain", "llm", "sse"]
+keywords = ["agent", "fastapi", "langgraph", "llm", "rag"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: FastAPI",
@@ -20,15 +20,26 @@ classifiers = [
 ]
 dependencies = [
     "fastapi>=0.115,<1",
+    "starlette>=1.7,<2",
     "langchain>=1.4,<2",
-    "langchain-huggingface>=0.3,<1",
-    "langchain-openai>=1.1,<2",
+    "langchain-chroma>=1.1,<2",
+    "langchain-huggingface>=1.2,<2",
+    "langchain-openai>=1.6,<2",
+    "langgraph>=1.2,<2",
+    "langchain-text-splitters>=1.1,<2",
+    "huggingface-hub>=0.33,<2",
     "python-dotenv>=1.0,<2",
-    "sentence-transformers>=3,<6",
-    "sse-starlette>=3,<4",
+    "python-multipart>=0.0.9,<1",
+    "sentence-transformers>=5.2,<6",
     "typesafe-sdk>=0.7,<1",
-    "uvicorn[standard]>=0.30,<1",
+    "httpx>=0.28,<1",
 ]
 
 [tool.setuptools.packages.find]
 include = ["langHar*"]
+
+[project.optional-dependencies]
+# LangGraph Server 本地开发用的 CLI 与内存运行时；不参与运行时依赖。
+dev = [
+    "langgraph-cli[inmem]>=0.4,<0.5",
+]

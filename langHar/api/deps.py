@@ -7,17 +7,11 @@ from typing import TYPE_CHECKING, Protocol
 from fastapi import Request
 
 if TYPE_CHECKING:
-    from langHar.api.auth.auth_service import AuthService
-    from langHar.api.chat.chat_service import ChatService
-    from langHar.api.session.session_manager import SessionManager
+    from langHar.api.knowledge.ports import KnowledgeIngestionPort
 
 
 class ServiceContainer(Protocol):
-    auth_service: AuthService
-    chat_service: ChatService
-    session_manager: SessionManager
-
-    async def aclose(self) -> None: ...
+    knowledge_ingestion: KnowledgeIngestionPort | None
 
 
 def get_container(request: Request) -> ServiceContainer:

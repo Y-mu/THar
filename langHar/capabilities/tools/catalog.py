@@ -18,27 +18,26 @@ class IntentToolSpec:
     tools: tuple[ToolPermission, ...] = ()
 
 
-ALL_IDENTITIES = frozenset(IdentityLevel)
-
-
 TOOL_CATALOG: Mapping[str, IntentToolSpec] = MappingProxyType(
     {
-        "weather": IntentToolSpec(
-            tools=(
-                ToolPermission(
-                    name="get_weather",
-                    identity_levels=ALL_IDENTITIES,
-                ),
-            ),
-        ),
-        "calculator": IntentToolSpec(
-            tools=(
-                ToolPermission(
-                    name="calculate",
-                    identity_levels=frozenset({IdentityLevel.ADMIN}),
-                ),
-            ),
-        ),
         "general_chat": IntentToolSpec(),
+        "knowledge_qa": IntentToolSpec(
+            tools=(
+                ToolPermission(
+                    name="knowledge_list_documents",
+                    identity_levels=frozenset({
+                        IdentityLevel.ADMIN, IdentityLevel.L1, IdentityLevel.L2,
+                    }),
+                ),
+                ToolPermission(
+                    name="knowledge_search",
+                    identity_levels=frozenset({
+                        IdentityLevel.ADMIN,
+                        IdentityLevel.L1,
+                        IdentityLevel.L2,
+                    }),
+                ),
+            ),
+        ),
     }
 )

@@ -1,10 +1,9 @@
-from langchain_core.tools import BaseTool
+from langHar.capabilities.tools.builtin import (
+    create_knowledge_list_tool,
+    create_knowledge_search_tool,
+)
 
-from langHar.capabilities.tools.builtin import calculate, get_weather, search
-
-
-TOOL_REGISTRY: dict[str, BaseTool] = {
-    search.name: search,
-    get_weather.name: get_weather,
-    calculate.name: calculate,
+TOOL_REGISTRY = {
+    "knowledge_search": create_knowledge_search_tool,
+    "knowledge_list_documents": create_knowledge_list_tool,
 }

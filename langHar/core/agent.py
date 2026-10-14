@@ -29,23 +29,15 @@ class AgentContext:
     session_id: str
     user_id: int
     identity_level: IdentityLevel
-    history: tuple[ChatMessage, ...] = ()
+    tenant_id: str = "default"
+    knowledge_base_id: str = "default"
 
     def __post_init__(self) -> None:
         if not self.session_id.strip():
             raise ValueError("session_id 不能为空。")
         if self.user_id < 0:
             raise ValueError("user_id 不能小于 0。")
-
-
-AgentEventType = Literal["token", "tool_start", "tool_end", "final"]
-
-
-@dataclass(frozen=True, slots=True)
-class AgentEvent:
-    """框架无关的 Agent 流式事件。"""
-
-    type: AgentEventType
-    content: str
-    name: str | None = None
-    reason: str | None = None
+        if not self.tenant_id.strip():
+            raise ValueError("tenant_id 不能为空。")
+        if not self.knowledge_base_id.strip():
+            raise ValueError("knowledge_base_id 不能为空。")
